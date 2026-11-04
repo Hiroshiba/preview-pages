@@ -42,6 +42,7 @@ jobs:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build
         run: |
@@ -71,5 +72,11 @@ jobs:
       - name: Upload Caches
         run: |
           pnpm run run:upload-caches
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup ENGINE Releases
+        run: |
+          pnpm run run:cleanup-engine-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -93,6 +93,59 @@
         </ElCard>
       </template>
     </section>
+    <section class="engine-downloads">
+      <h2>VOICEVOX ENGINE 開発版</h2>
+      <template v-if="engineDownloads.loading">
+        <ElLoading />
+      </template>
+      <p v-else-if="engineDownloads.result.status === 'unavailable'">
+        現在、開発版は利用できません。
+      </p>
+      <template v-else>
+        <p>
+          <a :href="`https://github.com/${engineRepo}/tree/${engineBranch}`">
+            {{ engineBranch }}
+          </a>
+          ・{{ engineDownloads.result.version }} ・<a
+            :href="`https://github.com/${engineRepo}/commit/${engineDownloads.result.commitSha}`"
+          >
+            {{ engineDownloads.result.commitSha.slice(0, 7) }}
+          </a>
+          ・<a
+            :href="`https://github.com/${engineRepo}/actions/runs/${engineDownloads.result.runId}`"
+          >
+            Actions run {{ engineDownloads.result.runId }}
+          </a>
+          ・<a :href="engineDownloads.result.releaseUrl">Release</a>
+        </p>
+        <div class="engine-targets">
+          <ElCard
+            v-for="download in engineDownloads.result.targets"
+            :key="download.target"
+          >
+            <template #header>{{ download.target }}</template>
+            <div
+              v-for="format in engineFormats"
+              :key="format.key"
+              class="engine-format"
+            >
+              <h3>{{ format.label }}</h3>
+              <ul>
+                <li
+                  v-for="file in [
+                    download[format.key].list,
+                    ...download[format.key].parts,
+                  ]"
+                  :key="file.name"
+                >
+                  <a :href="file.url">{{ file.name }}</a>
+                </li>
+              </ul>
+            </div>
+          </ElCard>
+        </div>
+      </template>
+    </section>
   </main>
 </template>
 
@@ -106,12 +159,19 @@ import {
 } from "element-plus";
 import { ref, onMounted, watch } from "vue";
 import { TargetRepoKey } from "../scripts/common.ts";
-import { targetRepos } from "../scripts/constants.ts";
+import { engineBranch, engineRepo, targetRepos } from "../scripts/constants.ts";
 import { useDownloadData } from "./composables/useDownloadData.ts";
+import { useEngineDownloadData } from "./composables/useEngineDownloadData.ts";
 import { useColorScheme } from "./composables/useColorScheme.ts";
 
 const downloads = useDownloadData();
+const engineDownloads = useEngineDownloadData();
 useColorScheme();
+
+const engineFormats = [
+  { key: "sevenZip", label: "7z" },
+  { key: "vvpp", label: "VVPP" },
+] satisfies { key: "sevenZip" | "vvpp"; label: string }[];
 
 const currentRepo = ref<TargetRepoKey>("editor");
 const switchRepo = (repo: TargetRepoKey) => {
@@ -191,5 +251,19 @@ const joinUrl = (path: string) =>
 .download-card :deep(.el-card__body) {
   display: flex;
   gap: 1rem;
+}
+
+.engine-downloads {
+  margin-top: 2rem;
+}
+
+.engine-targets {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.engine-format {
+  overflow-wrap: anywhere;
 }
 </style>

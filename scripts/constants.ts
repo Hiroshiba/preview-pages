@@ -1,5 +1,19 @@
 // NOTE: このファイルはフロントエンドからもimportされるため、common.tsのimportは避ける
 import { Endpoints } from "@octokit/types";
+import { z } from "zod";
+
+export const engineRepo = "VOICEVOX/voicevox_engine";
+export const engineBranch = "master";
+export const engineTargets = z.enum([
+  "windows-cpu",
+  "windows-directml",
+  "windows-nvidia",
+  "macos-x64",
+  "macos-arm64",
+  "linux-cpu-x64",
+  "linux-cpu-arm64",
+  "linux-nvidia",
+]).options;
 
 export type Branch =
   Endpoints["GET /repos/{owner}/{repo}/branches"]["response"]["data"][0];

@@ -20,14 +20,14 @@ curl https://voicevox.github.io/preview-pages/preview/downloads.json -o ./public
 pnpm run dev
 ```
 
-### コメントの追加などの書き込み系の動作なしで動かす場合
+### GitHubへ書き込まず取得可否を確認する場合
 
 1. GitHub の Personal Access Token を取得します。
 2. `.env.example` をコピーして `.env` を作成します。内容はコメントを参照してください。
 3. 以下のコマンドを実行します：
 
 ```
-pnpm run run:collect-artifacts
+pnpm run run:collect-artifacts --fetchUrlOnly
 ```
 
 ### 書き込み系の動作を含めて動かす場合
@@ -37,6 +37,10 @@ pnpm run run:collect-artifacts
 権限は以下の通りです：
 
 - Pull requests：Read & write
+- Actions：Read
+- Checks：Read
+
+ENGINEの開発版を配布する場合、preview-pagesのUpdate Pages workflowにはReleaseの作成・削除に使う `contents: write` と `GITHUB_TOKEN` が必要です。ENGINE側の通知には `TRIGGER_PREVIEW_PAGES_TOKEN` を使い、ほかの送信元と同じく入力なしで `update_pages.yml` を起動します。
 
 #### Actionsで動かす
 
@@ -82,6 +86,10 @@ sequenceDiagram
     note over preview_pages: Pagesにデプロイする
     deactivate preview_pages
 ```
+
+ENGINEのmaster開発版は、成功した `build_preview_pages` checkのrunにある `preview-pages` Artifactから `engine-download-manifest.json` を読みます。マニフェストには `runId`、`commitSha`、`version`、8構成の `targets` を記します。各構成には `target`、`sevenZipArtifact`、`vvppArtifact` を記し、Artifact名は `voicevox_engine-{target}-{version}-7z` または `voicevox_engine-{target}-{version}-vvpp` にします。対象構成は `windows-cpu`、`windows-directml`、`windows-nvidia`、`macos-x64`、`macos-arm64`、`linux-cpu-x64`、`linux-cpu-arm64`、`linux-nvidia` です。16個の形式別Artifactには元ファイルと一覧ファイルを入れます。preview-pagesは元ファイル名でrun別Releaseへ保存し、Pagesにそのリンクを掲載します。旧runのReleaseはPages公開成功後に整理します。
+
+`package_name` は `voicevox_engine-{target}-{version}` です。7zのArtifactには `{package_name}.7z.txt` と `{package_name}.7z.NNN`、VVPPのArtifactには `{package_name}.vvpp.txt` と `{package_name}.vvpp` または `{package_name}.NNN.vvppp` を入れます。一覧ファイルには同じArtifact内の配布ファイル名を一行ずつ記します。
 
 ## リポジトリの追加
 

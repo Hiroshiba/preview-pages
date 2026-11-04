@@ -11,6 +11,7 @@
     "run:update-comments": "tsx scripts/updateComments.ts",
     "run:upload-caches": "tsx scripts/uploadCaches.ts",
     "run:cleanup-caches": "tsx scripts/cleanupCaches.ts",
+    "run:cleanup-engine-releases": "tsx scripts/cleanupEngineReleases.ts",
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
@@ -19,7 +20,8 @@
     "@core/asyncutil": "npm:@jsr/core__asyncutil@1.2.0",
     "@logtape/logtape": "2.0.4",
     "element-plus": "2.13.5",
-    "vue": "3.5.30"
+    "vue": "3.5.30",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
