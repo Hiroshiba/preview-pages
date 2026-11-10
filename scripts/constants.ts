@@ -1,19 +1,5 @@
 // NOTE: このファイルはフロントエンドからもimportされるため、common.tsのimportは避ける
 import { Endpoints } from "@octokit/types";
-import { z } from "zod";
-
-export const engineRepo = "VOICEVOX/voicevox_engine";
-export const engineBranch = "master";
-export const engineTargets = z.enum([
-  "windows-cpu",
-  "windows-directml",
-  "windows-nvidia",
-  "macos-x64",
-  "macos-arm64",
-  "linux-cpu-x64",
-  "linux-cpu-arm64",
-  "linux-nvidia",
-]).options;
 
 export type Branch =
   Endpoints["GET /repos/{owner}/{repo}/branches"]["response"]["data"][0];
@@ -94,6 +80,29 @@ export const targetRepos = {
     }[];
   }
 >;
+
+export const releaseTargets = {
+  engine: {
+    repo: "VOICEVOX/voicevox_engine",
+    label: "エンジン",
+    branch: "master",
+  },
+} as const satisfies Record<
+  string,
+  { repo: `${string}/${string}`; label: string; branch: string }
+>;
+
+export type ReleaseTargetKey = keyof typeof releaseTargets;
+
+/** 配布対象のkeyかどうかを判定する。 */
+export function isReleaseTargetKey(key: string): key is ReleaseTargetKey {
+  return key in releaseTargets;
+}
+
+/** Web対象のkeyかどうかを判定する。 */
+export function isTargetRepoKey(key: string): key is TargetRepoKey {
+  return key in targetRepos;
+}
 
 export type TargetRepoKey = keyof typeof targetRepos;
 

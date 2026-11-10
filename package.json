@@ -11,7 +11,7 @@
     "run:update-comments": "tsx scripts/updateComments.ts",
     "run:upload-caches": "tsx scripts/uploadCaches.ts",
     "run:cleanup-caches": "tsx scripts/cleanupCaches.ts",
-    "run:cleanup-engine-releases": "tsx scripts/cleanupEngineReleases.ts",
+    "run:cleanup-releases": "tsx scripts/cleanupReleases.ts",
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"

@@ -1,6 +1,6 @@
 # VOICEVOX Preview Pages
 
-[voicevox/voicevox](https://github.com/voicevox/voicevox) のプレビューページを提供するためのリポジトリです。  
+VOICEVOXのWebプレビューと開発版リリース一覧を提供するリポジトリです。  
 対象ブランチ：
 
 - `main`
@@ -17,6 +17,7 @@
 ```
 pnpm i
 curl https://voicevox.github.io/preview-pages/preview/downloads.json -o ./public/preview/downloads.json
+curl https://voicevox.github.io/preview-pages/preview/releases.json -o ./public/preview/releases.json
 pnpm run dev
 ```
 
@@ -40,7 +41,7 @@ pnpm run run:collect-artifacts --fetchUrlOnly
 - Actions：Read
 - Checks：Read
 
-ENGINEの開発版を配布する場合、preview-pagesのUpdate Pages workflowにはReleaseの作成・削除に使う `contents: write` と `GITHUB_TOKEN` が必要です。ENGINE側の通知には `TRIGGER_PREVIEW_PAGES_TOKEN` を使い、ほかの送信元と同じく入力なしで `update_pages.yml` を起動します。
+開発版を配布する場合、preview-pagesのUpdate Pages workflowにはReleaseの作成・削除に使う `contents: write` と `GITHUB_TOKEN` が必要です。
 
 #### Actionsで動かす
 
@@ -87,9 +88,9 @@ sequenceDiagram
     deactivate preview_pages
 ```
 
-ENGINEのmaster開発版は、成功した `build_preview_pages` checkのrunにある `preview-pages` Artifactから `engine-download-manifest.json` を読みます。マニフェストには `runId`、`commitSha`、`version`、8構成の `targets` を記します。各構成には `target`、`sevenZipArtifact`、`vvppArtifact` を記し、Artifact名は `voicevox_engine-{target}-{version}-7z` または `voicevox_engine-{target}-{version}-vvpp` にします。対象構成は `windows-cpu`、`windows-directml`、`windows-nvidia`、`macos-x64`、`macos-arm64`、`linux-cpu-x64`、`linux-cpu-arm64`、`linux-nvidia` です。16個の形式別Artifactには元ファイルと一覧ファイルを入れます。preview-pagesは元ファイル名でrun別Releaseへ保存し、Pagesにそのリンクを掲載します。旧runのReleaseはPages公開成功後に整理します。
+開発版の配布対象は `scripts/constants.ts` の `releaseTargets` に登録します。登録するリポジトリと追跡ブランチの成功した `build_preview_pages` checkから一つのrunを選び、そのrunの `preview-pages-download-` で始まるActions Artifactに入った通常ファイルを、階層の有無にかかわらず葉の元ファイル名でrun別Releaseへ保存します。ディレクトリは配布ファイルに含めません。同じReleaseに入る全Artifactで葉のファイル名が重複しないようにしてください。配布用Artifactが一件もない場合は配布物を表示しません。Webも提供する対象は、同じrunにWeb用の `preview-pages` Artifactを置きます。配布ファイルは `releases.json`、Webは `downloads.json` に記録し、画面では同じブランチとコミットのカードに表示します。古い配布ReleaseはPages公開後に整理します。
 
-`package_name` は `voicevox_engine-{target}-{version}` です。7zのArtifactには `{package_name}.7z.txt` と `{package_name}.7z.NNN`、VVPPのArtifactには `{package_name}.vvpp.txt` と `{package_name}.vvpp` または `{package_name}.NNN.vvppp` を入れます。一覧ファイルには同じArtifact内の配布ファイル名を一行ずつ記します。
+送信側は、同じリポジトリとブランチの一回の更新で必要なWebと配布ファイルをすべて同じworkflow runへuploadしてください。すべてのuploadが終わってから `build_preview_pages` checkを成功させ、その成功に依存する通知jobから入力なしの `update_pages.yml` を一回起動してください。通知は収集の合図であり、run IDやコミットは渡しません。Webと配布物を別のrunに分けたまま `releaseTargets` へ登録できません。
 
 ## リポジトリの追加
 
@@ -112,7 +113,7 @@ ENGINEのmaster開発版は、成功した `build_preview_pages` checkのrunに�
   },
 ```
 
-2. 追加するリポジトリに以下の2つのWorkflowを追加します。
+2. Webプレビューだけを提供するリポジトリには以下の2つのWorkflowを追加します。開発版も配布する場合は、上記の契約に従い、ビルド完了後の通知jobから起動してください。
 
 <details>
 <summary>DANGEROUS_trigger_preview_pages.yml</summary>

@@ -5,12 +5,32 @@ import { octokit, pagesBuildCheckName, splitRepoName } from "./common.ts";
 
 const jobWaitSemaphore = new Semaphore(5);
 
+type JobAndRunId = { jobId: number; runId: number };
+type Artifact = Awaited<
+  ReturnType<typeof octokit.rest.actions.listWorkflowRunArtifacts>
+>["data"]["artifacts"][number];
+
+function getRunId(detailsUrl: string | null): number {
+  if (detailsUrl == null || detailsUrl === "") {
+    throw new Error(
+      `Build check "${pagesBuildCheckName}" does not have a details URL.`,
+    );
+  }
+  const runId = detailsUrl.match(/(?<=\/runs\/)[0-9]+/)?.[0];
+  if (runId == undefined) {
+    throw new Error(
+      `Failed to extract check run ID from details URL: ${detailsUrl}`,
+    );
+  }
+  return Number.parseInt(runId);
+}
+
 /** 指定refのプレビュー用jobとActions runを取得する。 */
 export async function getJobAndRunId(
   log: Logger,
   repo: `${string}/${string}`,
   ref: string,
-): Promise<{ jobId: number; runId: number } | undefined> {
+): Promise<JobAndRunId | undefined> {
   log.info("Checking...");
   const checkRuns = await octokit.paginate(
     "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
@@ -23,19 +43,38 @@ export async function getJobAndRunId(
     log.info("No build check found");
     return;
   }
-  if (buildPageCheck.details_url == null || buildPageCheck.details_url === "") {
-    throw new Error(
-      `Build check "${pagesBuildCheckName}" does not have a details URL.`,
+  return {
+    jobId: buildPageCheck.id,
+    runId: getRunId(buildPageCheck.details_url),
+  };
+}
+
+/** 選択したcommitとbranchに一致するプレビュー用runを取得する。 */
+export async function getJobAndRunIdForBranch(
+  log: Logger,
+  repo: `${string}/${string}`,
+  branch: string,
+  commitSha: string,
+): Promise<JobAndRunId | undefined> {
+  log.info("Checking...");
+  const checkRuns = await octokit.paginate(
+    "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+    { ...splitRepoName(repo), ref: commitSha },
+  );
+  for (const checkRun of checkRuns) {
+    if (checkRun.name !== pagesBuildCheckName) {
+      continue;
+    }
+    const runId = getRunId(checkRun.details_url);
+    const { data: run } = await octokit.request(
+      "GET /repos/{owner}/{repo}/actions/runs/{run_id}",
+      { ...splitRepoName(repo), run_id: runId },
     );
+    if (run.head_sha === commitSha && run.head_branch === branch) {
+      return { jobId: checkRun.id, runId };
+    }
   }
-  const runId = buildPageCheck.details_url.match(/(?<=\/runs\/)[0-9]+/)?.[0];
-  if (runId == undefined) {
-    log.error(
-      `Failed to extract check run ID from details URL: ${buildPageCheck.details_url}`,
-    );
-    return;
-  }
-  return { jobId: buildPageCheck.id, runId: Number.parseInt(runId) };
+  log.info("No matching build check found");
 }
 
 /** プレビュー用jobの成功を待つ。 */
@@ -76,6 +115,52 @@ export async function waitForJobCompletion(
   return true;
 }
 
+/** Artifactの取得先URLをZIP取得前に解決する。 */
+export async function fetchArtifactDownloadUrl(
+  log: Logger,
+  repo: `${string}/${string}`,
+  runId: number,
+  artifact: Artifact,
+): Promise<string | undefined> {
+  if (
+    artifact.archive_download_url == null ||
+    artifact.archive_download_url === ""
+  ) {
+    throw new Error(
+      `Artifact "${artifact.name}" does not have a download URL in run ${runId}`,
+    );
+  }
+  log.info`Fetching artifact URL: ${artifact.name}`;
+  try {
+    const response = await octokit.request(
+      "GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}",
+      {
+        ...splitRepoName(repo),
+        artifact_id: artifact.id,
+        archive_format: "zip",
+        request: { redirect: "manual", parseSuccessResponseBody: false },
+      },
+    );
+    if (response.data instanceof ReadableStream) {
+      await response.data.cancel();
+    }
+    if (
+      response.status !== 302 ||
+      response.headers.location == null ||
+      response.headers.location === ""
+    ) {
+      throw new Error(`Artifactの取得先を解決できません: ${artifact.name}`);
+    }
+    return new URL(response.headers.location, response.url).href;
+  } catch (error) {
+    if (error instanceof RequestError && error.status === 410) {
+      log.error("Artifact is expired");
+      return;
+    }
+    throw error;
+  }
+}
+
 /** 指定runのArtifactを処理直前に取得する。 */
 export async function fetchArtifactUrl(
   log: Logger,
@@ -93,31 +178,23 @@ export async function fetchArtifactUrl(
   if (artifact == undefined) {
     throw new Error(`Artifact "${name}" not found in run ${runId}`);
   }
-  if (
-    artifact.archive_download_url == null ||
-    artifact.archive_download_url === ""
-  ) {
-    throw new Error(
-      `Artifact "${name}" does not have a download URL in run ${runId}`,
-    );
-  }
-  log.info`Fetching artifact URL from ${artifact.archive_download_url}`;
+  return fetchArtifactDownloadUrl(log, repo, runId, artifact);
+}
 
-  try {
-    const response = await octokit.request(
-      "GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}",
-      {
-        ...splitRepoName(repo),
-        artifact_id: artifact.id,
-        archive_format: "zip",
-      },
-    );
-    return response.url;
-  } catch (error) {
-    if (error instanceof RequestError && error.status === 410) {
-      log.error("Artifact is expired");
-      return;
-    }
-    throw error;
+/** 指定runの配布用Artifactを全ページから取得する。 */
+export async function fetchReleaseArtifacts(
+  repo: `${string}/${string}`,
+  runId: number,
+): Promise<Artifact[]> {
+  const artifacts = await octokit.paginate(
+    "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
+    { ...splitRepoName(repo), run_id: runId, per_page: 100 },
+  );
+  const releaseArtifacts = artifacts.filter((artifact) =>
+    artifact.name.startsWith("preview-pages-download-"),
+  );
+  if (releaseArtifacts.length === 0) {
+    throw new Error(`No release artifacts found in run ${runId}`);
   }
+  return releaseArtifacts;
 }

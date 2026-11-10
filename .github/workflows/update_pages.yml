@@ -75,8 +75,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cleanup ENGINE Releases
+      - name: Cleanup Releases
         run: |
-          pnpm run run:cleanup-engine-releases
+          pnpm run run:cleanup-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
