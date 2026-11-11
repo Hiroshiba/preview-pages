@@ -115,7 +115,7 @@
               v-for="link in card.links"
               :key="link.label"
               :type="link.buttonType"
-              :href="joinUrl(`${card.pathFragment}/${link.path}`)"
+              :href="link.href"
               tag="a"
               target="_blank"
               >{{ link.label }}</ElButton
@@ -157,7 +157,7 @@ import { useColorScheme } from "./composables/useColorScheme.ts";
 const selectableRepos = { ...targetRepos, ...releaseTargets };
 type RepoKey = keyof typeof selectableRepos;
 type WebLink = {
-  path: string;
+  href: string;
   buttonType: "success" | "danger";
   label: string;
 };
@@ -167,7 +167,6 @@ type Card =
       key: string;
       branch: string;
       commitSha: string;
-      pathFragment: string;
       links: readonly WebLink[];
       release?: AvailableRelease;
     }
@@ -175,7 +174,6 @@ type Card =
       type: "pullRequest";
       key: string;
       pullRequest: PullRequest;
-      pathFragment: string;
       links: readonly WebLink[];
     };
 
@@ -194,8 +192,10 @@ const releaseBranch = search.get("release");
 const repoPageUrl = computed(
   () => `${location.pathname}?repo=${encodeURIComponent(currentRepo.value)}`,
 );
-const releasePageUrl = (branch: string): string =>
+const releasePageUrl = (branch: string) =>
   `${repoPageUrl.value}&release=${encodeURIComponent(branch)}`;
+const joinUrl = (path: string) =>
+  `${import.meta.env.BASE_URL}/preview/${path}`.replace(/\/+/g, "/");
 
 const detailRelease = computed(() => {
   if (releaseBranch == null || releases.value.loading) {
@@ -208,7 +208,7 @@ const detailRelease = computed(() => {
   return undefined;
 });
 
-const cards = computed<Card[]>(() => {
+const cards = computed(() => {
   if (downloads.value.loading || releases.value.loading) {
     return [];
   }
@@ -217,6 +217,11 @@ const cards = computed<Card[]>(() => {
   const result: Card[] = [];
   if (isTargetRepoKey(repoKey)) {
     for (const download of downloads.value.result[repoKey].data) {
+      const links = targetRepos[repoKey].links.map((link) => ({
+        href: joinUrl(`${download.pathFragment}/${link.path}`),
+        buttonType: link.buttonType,
+        label: link.label,
+      }));
       if (download.source.type === "branch") {
         const branch = download.source.branch;
         result.push({
@@ -224,8 +229,7 @@ const cards = computed<Card[]>(() => {
           key: download.pathFragment,
           branch: branch.name,
           commitSha: branch.commit.sha,
-          pathFragment: download.pathFragment,
-          links: targetRepos[repoKey].links,
+          links,
           release:
             release?.status === "available" &&
             release.branch === branch.name &&
@@ -238,8 +242,7 @@ const cards = computed<Card[]>(() => {
           type: "pullRequest",
           key: download.pathFragment,
           pullRequest: download.source.pullRequest,
-          pathFragment: download.pathFragment,
-          links: targetRepos[repoKey].links,
+          links,
         });
       }
     }
@@ -249,7 +252,6 @@ const cards = computed<Card[]>(() => {
       key: `${repoKey}-${release.branch}`,
       branch: release.branch,
       commitSha: release.commitSha,
-      pathFragment: "",
       links: [],
       release,
     });
@@ -257,7 +259,7 @@ const cards = computed<Card[]>(() => {
   return result;
 });
 
-const switchRepo = (repoKey: RepoKey): void => {
+const switchRepo = (repoKey: RepoKey) => {
   currentRepo.value = repoKey;
 };
 watch(currentRepo, (newVal) => {
@@ -265,9 +267,6 @@ watch(currentRepo, (newVal) => {
   next.set("repo", newVal);
   history.replaceState(null, "", `${location.pathname}?${next.toString()}`);
 });
-
-const joinUrl = (path: string): string =>
-  `${import.meta.env.BASE_URL}/preview/${path}`.replace(/\/+/g, "/");
 
 const formatFileSize = (size: number): string => {
   if (size >= 1_073_741_824) {

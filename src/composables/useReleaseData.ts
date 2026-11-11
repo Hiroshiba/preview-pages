@@ -1,8 +1,6 @@
 import { ref } from "vue";
-import {
-  ReleaseResults,
-  releaseResultsSchema,
-} from "../../scripts/releaseSchema.ts";
+import { releaseResultsSchema } from "../../scripts/releaseSchema.ts";
+import type { ReleaseResults } from "../../scripts/releaseSchema.ts";
 
 const releaseResultRef = ref<
   { loading: false; result: ReleaseResults } | { loading: true }
@@ -18,7 +16,6 @@ void fetch(
   releaseResultRef.value = { loading: false, result: data };
 });
 
-/** 開発版のリリース一覧を返す。 */
-export function useReleaseData(): typeof releaseResultRef {
+export function useReleaseData() {
   return releaseResultRef;
 }

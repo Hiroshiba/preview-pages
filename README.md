@@ -52,7 +52,8 @@ pnpm run run:collect-artifacts --fetchUrlOnly
 
 2. 作成したGitHub Appsの`Private key`を取得し、`private-key.pem`として保存します。
 3. `.env.example` をコピーして `.env` を作成します。内容はコメントを参照してください。
-4. 以下のコマンドを実行します：
+4. `GITHUB_TOKEN` にpreview-pagesのContents: Read and write権限を持つPersonal Access Tokenを設定します。Releaseの書き込みにはGitHub Appsの認証情報とは別に必要です。
+5. 以下のコマンドを実行します：
 
 ```
 pnpm run run:collect-artifacts
@@ -89,6 +90,7 @@ sequenceDiagram
 ```
 
 開発版の配布対象は `scripts/constants.ts` の `releaseTargets` に登録します。登録するリポジトリと追跡ブランチの成功した `build_preview_pages` checkから一つのrunを選び、そのrunの `preview-pages-download-` で始まるActions Artifactに入った通常ファイルを、階層の有無にかかわらず葉の元ファイル名でrun別Releaseへ保存します。ディレクトリは配布ファイルに含めません。同じReleaseに入る全Artifactで葉のファイル名が重複しないようにしてください。配布用Artifactが一件もない場合は配布物を表示しません。Webも提供する対象は、同じrunにWeb用の `preview-pages` Artifactを置きます。配布ファイルは `releases.json`、Webは `downloads.json` に記録し、画面では同じブランチとコミットのカードに表示します。古い配布ReleaseはPages公開後に整理します。
+Webと配布を同じカードに表示する場合は、`targetRepos` と `releaseTargets` で同じkeyとリポジトリを使います。
 
 送信側は、同じリポジトリとブランチの一回の更新で必要なWebと配布ファイルをすべて同じworkflow runへuploadしてください。すべてのuploadが終わってから `build_preview_pages` checkを成功させ、その成功に依存する通知jobから入力なしの `update_pages.yml` を一回起動してください。通知は収集の合図であり、run IDやコミットは渡しません。Webと配布物を別のrunに分けたまま `releaseTargets` へ登録できません。
 

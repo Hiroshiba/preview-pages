@@ -1,7 +1,12 @@
 import { Semaphore } from "@core/asyncutil";
 import { Logger } from "@logtape/logtape";
 import { RequestError } from "octokit";
-import { octokit, pagesBuildCheckName, splitRepoName } from "./common.ts";
+import {
+  artifactName,
+  octokit,
+  pagesBuildCheckName,
+  splitRepoName,
+} from "./common.ts";
 
 const jobWaitSemaphore = new Semaphore(5);
 
@@ -119,17 +124,8 @@ export async function waitForJobCompletion(
 export async function fetchArtifactDownloadUrl(
   log: Logger,
   repo: `${string}/${string}`,
-  runId: number,
   artifact: Artifact,
 ): Promise<string | undefined> {
-  if (
-    artifact.archive_download_url == null ||
-    artifact.archive_download_url === ""
-  ) {
-    throw new Error(
-      `Artifact "${artifact.name}" does not have a download URL in run ${runId}`,
-    );
-  }
   log.info`Fetching artifact URL: ${artifact.name}`;
   try {
     const response = await octokit.request(
@@ -166,19 +162,18 @@ export async function fetchArtifactUrl(
   log: Logger,
   repo: `${string}/${string}`,
   runId: number,
-  name: string,
 ): Promise<string | undefined> {
   const buildPage = await octokit.request(
     "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
     { ...splitRepoName(repo), run_id: runId },
   );
   const artifact = buildPage.data.artifacts.find(
-    (artifact) => artifact.name === name,
+    (artifact) => artifact.name === artifactName,
   );
   if (artifact == undefined) {
-    throw new Error(`Artifact "${name}" not found in run ${runId}`);
+    throw new Error(`Artifact "${artifactName}" not found in run ${runId}`);
   }
-  return fetchArtifactDownloadUrl(log, repo, runId, artifact);
+  return fetchArtifactDownloadUrl(log, repo, artifact);
 }
 
 /** 指定runの配布用Artifactを全ページから取得する。 */

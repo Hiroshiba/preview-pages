@@ -12,7 +12,6 @@ import {
   waitForJobCompletion,
 } from "./artifactSource.ts";
 import {
-  artifactName,
   destinationDir,
   rootLogger,
   octokit,
@@ -55,7 +54,7 @@ type Collection = {
 
 const unavailable: ReleaseData = { status: "unavailable" };
 
-async function main(): Promise<void> {
+async function main() {
   const args = processArgs();
   const {
     totalSuccessfulDownloads,
@@ -92,8 +91,12 @@ async function main(): Promise<void> {
 function processArgs(): Args {
   const { values: args } = parseArgs({
     options: {
-      fetchUrlOnly: { type: "boolean" },
-      help: { type: "boolean" },
+      fetchUrlOnly: {
+        type: "boolean",
+      },
+      help: {
+        type: "boolean",
+      },
     },
     args: process.argv.slice(2),
   });
@@ -108,17 +111,13 @@ function processArgs(): Args {
   if (args.fetchUrlOnly) {
     rootLogger.info("--fetchUrlOnly option is enabled.");
   }
-  return { fetchUrlOnly: args.fetchUrlOnly ?? false };
+
+  return {
+    fetchUrlOnly: args.fetchUrlOnly ?? false,
+  };
 }
 
-async function collectAllArtifacts(args: Args): Promise<{
-  totalSuccessfulDownloads: number;
-  successfulDownloads: Record<string, DownloadResult>;
-  totalTargets: number;
-  releases: ReleaseResults;
-  successfulReleases: number;
-  totalReleaseTargets: number;
-}> {
+async function collectAllArtifacts(args: Args) {
   const successfulDownloads: Record<string, DownloadResult> = {};
   const releases: ReleaseResults = Object.fromEntries(
     Object.keys(releaseTargets).map((key) => [key, unavailable]),
@@ -308,10 +307,15 @@ async function fetchTargets(repoKey: TargetRepoKey): Promise<{
   const filteredBranches = branches.filter((branch) =>
     isTargetBranch(branch.name),
   );
+
   const pullRequests = await octokit.paginate(
     "GET /repos/{owner}/{repo}/pulls",
-    { ...splitRepoName(repoKey), state: "open" },
+    {
+      ...splitRepoName(repoKey),
+      state: "open",
+    },
   );
+
   return { filteredBranches, pullRequests };
 }
 
@@ -360,8 +364,7 @@ export class Artifact {
   ): Promise<Artifact> {
     const repo = targetRepos[repoKey].repo;
     const cachedUrl = await getCachedArtifact(repoKey, source, runId);
-    const downloadUrl =
-      cachedUrl || (await fetchArtifactUrl(log, repo, runId, artifactName));
+    const downloadUrl = cachedUrl || (await fetchArtifactUrl(log, repo, runId));
 
     if (!downloadUrl) {
       throw new Error(`Failed to fetch artifact URL for run ${runId}`);

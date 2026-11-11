@@ -3,7 +3,7 @@ import fsSync from "node:fs";
 import { Transform } from "node:stream";
 import { paginateRest } from "@octokit/plugin-paginate-rest";
 import { Endpoints } from "@octokit/types";
-import { Octokit, RequestError } from "octokit";
+import { Octokit } from "octokit";
 import { cacheRepo, splitRepoName } from "./common.ts";
 import { releaseTargets, ReleaseTargetKey } from "./constants.ts";
 import { AvailableRelease, releaseFileNameSchema } from "./releaseSchema.ts";
@@ -27,18 +27,13 @@ export async function getRelease(
   key: ReleaseTargetKey,
   runId: number,
 ): Promise<Release | undefined> {
-  try {
-    const response = await releaseClient.rest.repos.getReleaseByTag({
-      ...splitRepoName(cacheRepo),
-      tag: getReleaseTag(key, runId),
-    });
-    return response.data;
-  } catch (error) {
-    if (error instanceof RequestError && error.status === 404) {
-      return;
-    }
-    throw error;
-  }
+  const releases = await releaseClient.paginate(
+    "GET /repos/{owner}/{repo}/releases",
+    { ...splitRepoName(cacheRepo), per_page: 100 },
+  );
+  return releases.find(
+    (release) => release.tag_name === getReleaseTag(key, runId),
+  );
 }
 
 /** 指定runのdraft Releaseを作成する。 */
@@ -155,7 +150,6 @@ function buildReleaseData(
     branch,
     commitSha,
     runId,
-    releaseUrl: release.html_url,
     files,
   };
 }

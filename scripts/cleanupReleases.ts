@@ -15,7 +15,7 @@ import {
 import { getReleaseTag } from "./release.ts";
 import { releaseResultsSchema } from "./releaseSchema.ts";
 
-async function main(): Promise<void> {
+async function main() {
   const releasesData = releaseResultsSchema.parse(
     JSON.parse(await fs.readFile(`${destinationDir}/releases.json`, "utf8")),
   );

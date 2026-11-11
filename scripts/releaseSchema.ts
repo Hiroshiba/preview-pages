@@ -3,7 +3,6 @@ import { releaseTargets } from "./constants.ts";
 
 export const releaseFileNameSchema = z
   .string()
-  .min(1)
   .regex(/^[^/\\]+$/)
   .refine((name) => name !== "." && name !== "..");
 
@@ -13,14 +12,13 @@ const releaseFileSchema = z.strictObject({
   url: z.url(),
 });
 
-export const releaseDataSchema = z.discriminatedUnion("status", [
+const releaseDataSchema = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("unavailable") }),
   z.strictObject({
     status: z.literal("available"),
     branch: z.string().min(1),
     commitSha: z.string().regex(/^[0-9a-f]{40}$/),
     runId: z.number().int().positive(),
-    releaseUrl: z.url(),
     files: z
       .array(releaseFileSchema)
       .min(1)

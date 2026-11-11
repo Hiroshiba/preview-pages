@@ -62,12 +62,7 @@ export async function collectRelease(
   if (fetchUrlOnly) {
     const artifacts = await fetchReleaseArtifacts(target.repo, source.runId);
     for (const artifact of artifacts) {
-      const url = await fetchArtifactDownloadUrl(
-        log,
-        target.repo,
-        source.runId,
-        artifact,
-      );
+      const url = await fetchArtifactDownloadUrl(log, target.repo, artifact);
       if (url == undefined) {
         throw new Error(`Failed to fetch artifact URL: ${artifact.name}`);
       }
@@ -103,12 +98,7 @@ export async function collectRelease(
   try {
     const filePath = path.join(tempDir, "entry");
     for (const artifact of artifacts) {
-      const url = await fetchArtifactDownloadUrl(
-        log,
-        target.repo,
-        source.runId,
-        artifact,
-      );
+      const url = await fetchArtifactDownloadUrl(log, target.repo, artifact);
       if (url == undefined) {
         throw new Error(`Failed to fetch artifact URL: ${artifact.name}`);
       }
