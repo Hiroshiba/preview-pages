@@ -33,10 +33,10 @@ export const cacheDownloadDir = `${import.meta.dirname}/cached`;
 export const destinationDir = `${import.meta.dirname}/../public/preview`;
 // ビルドチェックのJobの名前
 export const pagesBuildCheckName = "build_preview_pages";
-// ダウンロードするアーティファクトの名前
-export const artifactName = "preview-pages";
-// 配布するアーティファクトの名前の接頭辞
-export const releaseArtifactPrefix = "preview-pages-download-";
+// Webプレビューのアーティファクトの名前
+export const webArtifactName = "preview-pages";
+// 配布ファイルのアーティファクトの名前の接頭辞
+export const releaseArtifactPrefix = "preview-pages-release-";
 // PagesのURL
 export const pagesUrl = "https://voicevox.github.io/preview-pages";
 
@@ -154,7 +154,7 @@ export function createCacheFileName(
   return `${repoKey}-${createSourceKey(source)}-${runId}-v1.zip`;
 }
 
-type Asset =
+export type Asset =
   Endpoints["GET /repos/{owner}/{repo}/releases/assets/{asset_id}"]["response"]["data"];
 
 /* リポジトリをOctokitのパラメーターに渡せる形で分解する。 */

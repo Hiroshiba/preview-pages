@@ -38,8 +38,6 @@ pnpm run run:collect-artifacts --fetchUrlOnly
 権限は以下の通りです：
 
 - Pull requests：Read & write
-- Actions：Read
-- Checks：Read
 
 #### Actionsで動かす
 
@@ -89,14 +87,13 @@ sequenceDiagram
 
 ### 開発版の配布
 
-開発版の配布対象は `scripts/constants.ts` の `releaseTargets` に登録します。
-Webと配布を同じカードに表示する場合は、`targetRepos` と `releaseTargets` で同じkeyとリポジトリを使います。
+開発版を配布するリポジトリは、`scripts/constants.ts` の `targetRepos` で `releaseBranch` に配布するブランチを指定します。
+Webプレビューが無いリポジトリは `links` を空にします。
 
 配布対象のリポジトリは次のようにしてください。
 
-- 配布ファイルを、名前が `preview-pages-download-` で始まるArtifactとしてuploadします。
+- 配布ファイルを、名前が `preview-pages-release-` で始まるArtifactとしてuploadします。
   - Artifact内の階層は無視し、ファイル名だけで保存します。同じrunの全Artifactでファイル名が重複しないようにしてください。
-- Webも提供する場合は、Web用の `preview-pages` Artifactを同じrunへuploadします。
 - すべてのuploadが終わってから `build_preview_pages` checkを成功させます。
 - その成功に依存するjobから `update_pages.yml` を起動します。
 

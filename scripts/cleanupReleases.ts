@@ -1,14 +1,12 @@
 import fs from "node:fs/promises";
-import { RequestError } from "octokit";
-import {
-  cacheRepo,
-  destinationDir,
-  octokit,
-  rootLogger,
-  splitRepoName,
-} from "./common.ts";
+import { destinationDir, rootLogger } from "./common.ts";
 import { ReleaseData } from "./constants.ts";
-import { getReleaseTag, getReleaseTagPrefix, listReleases } from "./release.ts";
+import {
+  deleteRelease,
+  getReleaseTag,
+  getReleaseTagPrefix,
+  listReleases,
+} from "./release.ts";
 
 async function main() {
   const releasesData = JSON.parse(
@@ -17,8 +15,8 @@ async function main() {
 
   const releases = await listReleases();
   for (const data of releasesData) {
-    const prefix = getReleaseTagPrefix(data.key);
-    const retainedTag = getReleaseTag(data.key, data.runId);
+    const prefix = getReleaseTagPrefix(data.repoKey);
+    const retainedTag = getReleaseTag(data.repoKey, data.runId);
     for (const release of releases) {
       if (
         !release.tag_name.startsWith(prefix) ||
@@ -26,20 +24,7 @@ async function main() {
       ) {
         continue;
       }
-      try {
-        await octokit.rest.git.deleteRef({
-          ...splitRepoName(cacheRepo),
-          ref: `tags/${release.tag_name}`,
-        });
-      } catch (error) {
-        if (!(error instanceof RequestError && error.status === 404)) {
-          throw error;
-        }
-      }
-      await octokit.rest.repos.deleteRelease({
-        ...splitRepoName(cacheRepo),
-        release_id: release.id,
-      });
+      await deleteRelease(release);
       rootLogger.info`Deleted old release: ${release.tag_name}`;
     }
   }

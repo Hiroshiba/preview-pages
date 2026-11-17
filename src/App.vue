@@ -12,25 +12,23 @@
   <main v-if="detailRelease != undefined" class="main">
     <div class="release-detail">
       <nav class="release-nav">
-        <a :href="repoPageUrl"
-          >{{ selectableRepos[currentRepo].label }}の一覧</a
-        >
+        <a :href="repoPageUrl">{{ targetRepos[currentRepo].label }}の一覧</a>
         ／ {{ detailRelease.branch }}のリリース
       </nav>
-      <h2>{{ selectableRepos[currentRepo].label }}の開発版リリース</h2>
-      <a :href="`https://github.com/${selectableRepos[currentRepo].repo}`">
-        {{ selectableRepos[currentRepo].repo }}
+      <h2>{{ targetRepos[currentRepo].label }}の開発版リリース</h2>
+      <a :href="`https://github.com/${targetRepos[currentRepo].repo}`">
+        {{ targetRepos[currentRepo].repo }}
       </a>
       <div class="release-source">
         <ElTag type="primary" disableTransitions>Branch</ElTag>
         <a
-          :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${detailRelease.branch}`"
+          :href="`https://github.com/${targetRepos[currentRepo].repo}/tree/${detailRelease.branch}`"
         >
           {{ detailRelease.branch }}
         </a>
         <span>コミット</span>
         <a
-          :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${detailRelease.commitSha}`"
+          :href="`https://github.com/${targetRepos[currentRepo].repo}/commit/${detailRelease.commitSha}`"
         >
           {{ detailRelease.commitSha.slice(0, 7) }}
         </a>
@@ -45,11 +43,11 @@
     </div>
   </main>
   <main v-else class="main">
-    <p>プレビューするBranchまたはPull Requestを選択してください。</p>
+    <p>BranchまたはPull Requestを選択してください。</p>
     <section class="selector">
       <ElButtonGroup>
         <ElButton
-          v-for="(targetRepo, repoKey) in selectableRepos"
+          v-for="(targetRepo, repoKey) in targetRepos"
           :key="repoKey"
           :type="currentRepo === repoKey ? 'primary' : 'default'"
           @click="switchRepo(repoKey)"
@@ -69,7 +67,7 @@
       <template v-if="downloads.loading || releases.loading">
         <ElLoading />
       </template>
-      <template v-else-if="isTargetRepoKey(currentRepo)">
+      <template v-else>
         <ElCard
           v-for="download in downloads.result[currentRepo].data"
           :key="download.pathFragment"
@@ -136,33 +134,39 @@
             >リリース</ElButton
           >
         </ElCard>
-      </template>
-      <ElCard v-else-if="currentRelease != undefined" class="download-card">
-        <template #header>
-          <ElTag type="primary" disableTransitions>Branch</ElTag>
-          <a
-            class="download-source"
-            :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${currentRelease.branch}`"
-            @click.stop
-          >
-            {{ currentRelease.branch }}
-          </a>
-          ：
-          <a
-            :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${currentRelease.commitSha}`"
-            @click.stop
-          >
-            {{ currentRelease.commitSha.slice(0, 7) }}
-          </a>
-        </template>
-
-        <ElButton
-          type="primary"
-          :href="releasePageUrl(currentRelease.branch)"
-          tag="a"
-          >リリース</ElButton
+        <ElCard
+          v-if="
+            currentRelease != undefined &&
+            targetRepos[currentRepo].links.length === 0
+          "
+          class="download-card"
         >
-      </ElCard>
+          <template #header>
+            <ElTag type="primary" disableTransitions>Branch</ElTag>
+            <a
+              class="download-source"
+              :href="`https://github.com/${targetRepos[currentRepo].repo}/tree/${currentRelease.branch}`"
+              @click.stop
+            >
+              {{ currentRelease.branch }}
+            </a>
+            ：
+            <a
+              :href="`https://github.com/${targetRepos[currentRepo].repo}/commit/${currentRelease.commitSha}`"
+              @click.stop
+            >
+              {{ currentRelease.commitSha.slice(0, 7) }}
+            </a>
+          </template>
+
+          <ElButton
+            type="primary"
+            :href="releasePageUrl(currentRelease.branch)"
+            tag="a"
+            >リリース</ElButton
+          >
+        </ElCard>
+      </template>
     </section>
   </main>
 </template>
@@ -176,30 +180,24 @@ import {
   ElTag,
 } from "element-plus";
 import { computed, ref, onMounted, watch } from "vue";
-import {
-  isTargetRepoKey,
-  releaseTargets,
-  targetRepos,
-} from "../scripts/constants.ts";
+import { TargetRepoKey } from "../scripts/common.ts";
+import { targetRepos } from "../scripts/constants.ts";
 import { useDownloadData } from "./composables/useDownloadData.ts";
 import { useReleaseData } from "./composables/useReleaseData.ts";
 import { useColorScheme } from "./composables/useColorScheme.ts";
-
-const selectableRepos = { ...targetRepos, ...releaseTargets };
-type RepoKey = keyof typeof selectableRepos;
 
 const downloads = useDownloadData();
 const releases = useReleaseData();
 useColorScheme();
 
-const currentRepo = ref<RepoKey>("editor");
-const switchRepo = (repo: RepoKey) => {
+const currentRepo = ref<TargetRepoKey>("editor");
+const switchRepo = (repo: TargetRepoKey) => {
   currentRepo.value = repo;
 };
 onMounted(() => {
   const search = new URLSearchParams(location.search);
-  const repo = search.get("repo") as RepoKey | null;
-  if (repo && repo in selectableRepos) {
+  const repo = search.get("repo") as TargetRepoKey | null;
+  if (repo && repo in targetRepos) {
     currentRepo.value = repo;
   }
 });
@@ -209,17 +207,17 @@ watch(currentRepo, (newVal) => {
   history.replaceState(null, "", `${location.pathname}?${search.toString()}`);
 });
 
-const releaseBranch = new URLSearchParams(location.search).get("release");
+const detailBranch = new URLSearchParams(location.search).get("release");
 const currentRelease = computed(() => {
   if (releases.value.loading) {
     return undefined;
   }
   return releases.value.result.find(
-    (release) => release.key === currentRepo.value,
+    (release) => release.repoKey === currentRepo.value,
   );
 });
 const detailRelease = computed(() =>
-  currentRelease.value?.branch === releaseBranch
+  currentRelease.value?.branch === detailBranch
     ? currentRelease.value
     : undefined,
 );

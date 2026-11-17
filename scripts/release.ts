@@ -1,30 +1,28 @@
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
-import { Endpoints } from "@octokit/types";
 import { Octokit } from "octokit";
-import { cacheRepo, splitRepoName } from "./common.ts";
-import { releaseTargets, ReleaseTargetKey } from "./constants.ts";
+import { Asset, cacheRepo, splitRepoName } from "./common.ts";
+import {
+  Release,
+  ReleaseData,
+  TargetRepoKey,
+  targetRepos,
+} from "./constants.ts";
 
-type Release =
-  Endpoints["GET /repos/{owner}/{repo}/releases/{release_id}"]["response"]["data"];
-export type Asset =
-  Endpoints["GET /repos/{owner}/{repo}/releases/assets/{asset_id}"]["response"]["data"];
+export type ReleaseSource = Omit<ReleaseData, "files">;
 
 const releaseClient = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
 
-/** 配布対象のRelease tagの接頭辞を生成する。 */
-export function getReleaseTagPrefix(key: ReleaseTargetKey): string {
-  return `preview-pages-download-${key}-run-`;
+export function getReleaseTagPrefix(repoKey: TargetRepoKey): string {
+  return `preview-pages-release-${repoKey}-run-`;
 }
 
-/** 配布対象とrunからRelease tagを生成する。 */
-export function getReleaseTag(key: ReleaseTargetKey, runId: number): string {
-  return `${getReleaseTagPrefix(key)}${runId}`;
+export function getReleaseTag(repoKey: TargetRepoKey, runId: number): string {
+  return `${getReleaseTagPrefix(repoKey)}${runId}`;
 }
 
-/** draftを含むすべてのReleaseを取得する。 */
 export async function listReleases(): Promise<Release[]> {
   return releaseClient.paginate("GET /repos/{owner}/{repo}/releases", {
     ...splitRepoName(cacheRepo),
@@ -32,36 +30,29 @@ export async function listReleases(): Promise<Release[]> {
   });
 }
 
-/** 指定runのReleaseを取得する。 */
 export async function getRelease(
-  key: ReleaseTargetKey,
+  repoKey: TargetRepoKey,
   runId: number,
 ): Promise<Release | undefined> {
   const releases = await listReleases();
   return releases.find(
-    (release) => release.tag_name === getReleaseTag(key, runId),
+    (release) => release.tag_name === getReleaseTag(repoKey, runId),
   );
 }
 
-/** 指定runのdraft Releaseを作成する。 */
-export async function createRelease(
-  key: ReleaseTargetKey,
-  runId: number,
-  commitSha: string,
-): Promise<Release> {
-  const target = releaseTargets[key];
+export async function createRelease(source: ReleaseSource): Promise<Release> {
+  const target = targetRepos[source.repoKey];
   const response = await releaseClient.rest.repos.createRelease({
     ...splitRepoName(cacheRepo),
-    tag_name: getReleaseTag(key, runId),
-    name: `${target.label} ${target.branch} run ${runId}`,
-    body: `${target.repo} の ${target.branch}、${commitSha} の配布ファイルです。`,
+    tag_name: getReleaseTag(source.repoKey, source.runId),
+    name: `${target.label} ${source.branch} run ${source.runId}`,
+    body: `${target.repo} の ${source.branch}、${source.commitSha} の配布ファイルです。`,
     draft: true,
     prerelease: true,
   });
   return response.data;
 }
 
-/** upload済みで同じサイズの同名assetは再利用し、それ以外は削除してからstreamでuploadする。 */
 export async function ensureReleaseAsset(
   release: Release,
   name: string,
@@ -94,11 +85,23 @@ export async function ensureReleaseAsset(
   return response.data;
 }
 
-/** draft Releaseを公開する。 */
 export async function publishRelease(release: Release): Promise<void> {
   await releaseClient.rest.repos.updateRelease({
     ...splitRepoName(cacheRepo),
     release_id: release.id,
     draft: false,
+  });
+}
+
+export async function deleteRelease(release: Release): Promise<void> {
+  if (!release.draft) {
+    await releaseClient.rest.git.deleteRef({
+      ...splitRepoName(cacheRepo),
+      ref: `tags/${release.tag_name}`,
+    });
+  }
+  await releaseClient.rest.repos.deleteRelease({
+    ...splitRepoName(cacheRepo),
+    release_id: release.id,
   });
 }

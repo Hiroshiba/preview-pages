@@ -66,6 +66,12 @@ export const targetRepos = {
       },
     ],
   },
+  engine: {
+    repo: "VOICEVOX/voicevox_engine",
+    label: "エンジン",
+    links: [],
+    releaseBranch: "master",
+  },
 } as const satisfies Record<
   string,
   {
@@ -78,28 +84,11 @@ export const targetRepos = {
       emoji: string;
       label: string;
     }[];
+    releaseBranch?: string;
   }
 >;
 
-export const releaseTargets = {
-  engine: {
-    repo: "VOICEVOX/voicevox_engine",
-    label: "エンジン",
-    branch: "master",
-  },
-} as const satisfies Record<
-  string,
-  { repo: `${string}/${string}`; label: string; branch: string }
->;
-
-export type ReleaseTargetKey = keyof typeof releaseTargets;
-
 export type TargetRepoKey = keyof typeof targetRepos;
-
-/** Web対象のkeyかどうかを判定する。 */
-export function isTargetRepoKey(key: string): key is TargetRepoKey {
-  return key in targetRepos;
-}
 
 export type DownloadResult = {
   repoKey: TargetRepoKey;
@@ -108,7 +97,7 @@ export type DownloadResult = {
 };
 
 export type ReleaseData = {
-  key: ReleaseTargetKey;
+  repoKey: TargetRepoKey;
   branch: string;
   commitSha: string;
   runId: number;
