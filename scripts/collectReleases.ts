@@ -12,18 +12,20 @@ import {
   getJobAndRunIdForBranch,
   waitForJobCompletion,
 } from "./artifactSource.ts";
-import { releaseTargets, ReleaseTargetKey } from "./constants.ts";
+import { ReleaseData, releaseTargets, ReleaseTargetKey } from "./constants.ts";
 import {
+  Asset,
   createRelease,
   ensureReleaseAsset,
   getRelease,
-  listReleaseAssets,
   publishRelease,
-  readPublishedRelease,
 } from "./release.ts";
-import { ReleaseData, releaseFileNameSchema } from "./releaseSchema.ts";
 
-type ReleaseSource = { branch: string; commitSha: string; runId: number };
+export type ReleaseSource = {
+  key: ReleaseTargetKey;
+  commitSha: string;
+  runId: number;
+};
 
 /** 配布対象のcommitとbranchに一致する成功runを一度選ぶ。 */
 export async function selectReleaseSource(
@@ -39,104 +41,80 @@ export async function selectReleaseSource(
     commitSha,
   );
   if (jobAndRunId == undefined) {
-    throw new Error(
-      `配布対象のプレビュー用jobがありません: ${target.repo} ${target.branch}`,
-    );
+    throw new Error(`No job found for ${target.repo} ${target.branch}`);
   }
   if (!(await waitForJobCompletion(log, jobAndRunId.jobId, target.repo))) {
-    throw new Error(
-      `配布対象のプレビュー用jobが成功していません: ${jobAndRunId.jobId}`,
-    );
+    throw new Error(`Job #${jobAndRunId.jobId} did not complete successfully`);
   }
-  return { branch: target.branch, commitSha, runId: jobAndRunId.runId };
+  return { key, commitSha, runId: jobAndRunId.runId };
+}
+
+/** 選択したrunの配布用Artifactを取得できるか確認する。 */
+export async function checkReleaseArtifacts(
+  log: Logger,
+  source: ReleaseSource,
+): Promise<void> {
+  const target = releaseTargets[source.key];
+  const artifacts = await fetchReleaseArtifacts(target.repo, source.runId);
+  for (const artifact of artifacts) {
+    await fetchArtifactDownloadUrl(log, target.repo, artifact);
+    log.info`Download skipped: ${artifact.name}`;
+  }
 }
 
 /** 選択したrunの配布ファイルをReleaseへ保存する。 */
 export async function collectRelease(
   log: Logger,
-  key: ReleaseTargetKey,
   source: ReleaseSource,
-  fetchUrlOnly: boolean,
 ): Promise<ReleaseData> {
-  const target = releaseTargets[key];
-  if (fetchUrlOnly) {
-    const artifacts = await fetchReleaseArtifacts(target.repo, source.runId);
-    for (const artifact of artifacts) {
-      const url = await fetchArtifactDownloadUrl(log, target.repo, artifact);
-      if (url == undefined) {
-        throw new Error(`Failed to fetch artifact URL: ${artifact.name}`);
-      }
-      log.info`Download skipped: ${artifact.name}`;
-    }
-    return { status: "unavailable" };
-  }
-
-  const existingRelease = await getRelease(key, source.runId);
-  if (existingRelease != undefined) {
-    const published = await readPublishedRelease(
-      existingRelease,
-      source.branch,
-      source.commitSha,
-      source.runId,
-    );
-    if (published != undefined) {
-      return published;
-    }
+  const target = releaseTargets[source.key];
+  const existingRelease = await getRelease(source.key, source.runId);
+  if (existingRelease != undefined && !existingRelease.draft) {
+    return toReleaseData(source, existingRelease.assets);
   }
 
   const artifacts = await fetchReleaseArtifacts(target.repo, source.runId);
   const release =
     existingRelease ??
-    (await createRelease(key, source.runId, source.commitSha));
-  const listedAssets = await listReleaseAssets(release);
-  const assets = new Map(listedAssets.map((asset) => [asset.name, asset]));
-  if (assets.size !== listedAssets.length) {
-    throw new Error(`Release assetの名前が重複しています: ${release.tag_name}`);
-  }
-  const expected = new Map<string, number>();
+    (await createRelease(source.key, source.runId, source.commitSha));
+  const assets: Asset[] = [];
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "preview-release-"));
   try {
     const filePath = path.join(tempDir, "entry");
     for (const artifact of artifacts) {
       const url = await fetchArtifactDownloadUrl(log, target.repo, artifact);
-      if (url == undefined) {
-        throw new Error(`Failed to fetch artifact URL: ${artifact.name}`);
-      }
       await forEachZipEntry(url, async (entry) => {
         if (entry.type === "Directory") {
           entry.autodrain();
           return;
         }
-        const name = releaseFileNameSchema.parse(
-          path.posix.basename(entry.path),
-        );
-        if (expected.has(name)) {
-          throw new Error(`配布ファイル名が重複しています: ${name}`);
+        const name = path.posix.basename(entry.path);
+        if (assets.some((asset) => asset.name === name)) {
+          throw new Error(`Duplicate release file name: ${name}`);
         }
-        try {
-          await pipeline(entry, fsSync.createWriteStream(filePath));
-          const size = await ensureReleaseAsset(
-            release,
-            assets,
-            name,
-            filePath,
-          );
-          expected.set(name, size);
-        } finally {
-          await fs.rm(filePath, { force: true });
-        }
+        await pipeline(entry, fsSync.createWriteStream(filePath));
+        assets.push(await ensureReleaseAsset(release, name, filePath));
       });
     }
-    return await publishRelease(
-      release,
-      source.branch,
-      source.commitSha,
-      source.runId,
-      expected,
-    );
+    await publishRelease(release);
+    return toReleaseData(source, assets);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+}
+
+function toReleaseData(source: ReleaseSource, assets: Asset[]): ReleaseData {
+  return {
+    key: source.key,
+    branch: releaseTargets[source.key].branch,
+    commitSha: source.commitSha,
+    runId: source.runId,
+    files: assets.map((asset) => ({
+      name: asset.name,
+      size: asset.size,
+      url: asset.browser_download_url,
+    })),
+  };
 }
 
 async function forEachZipEntry(
@@ -145,10 +123,12 @@ async function forEachZipEntry(
 ): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`配布Artifactを取得できません: ${response.status}`);
+    throw new Error(
+      `Failed to download artifact: ${response.status} ${response.statusText}`,
+    );
   }
   if (response.body == null) {
-    throw new Error("配布Artifactの応答に本文がありません");
+    throw new Error("Response body is empty");
   }
   await pipeline(
     Readable.fromWeb(response.body),

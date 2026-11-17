@@ -21,7 +21,12 @@ import {
   splitRepoName,
   isTargetBranch,
 } from "./common.ts";
-import { collectRelease, selectReleaseSource } from "./collectReleases.ts";
+import {
+  checkReleaseArtifacts,
+  collectRelease,
+  ReleaseSource,
+  selectReleaseSource,
+} from "./collectReleases.ts";
 import {
   DownloadData,
   targetRepos,
@@ -29,30 +34,21 @@ import {
   DownloadResult,
   TargetRepoKey,
   ReleaseTargetKey,
+  ReleaseData,
   isReleaseTargetKey,
-  isTargetRepoKey,
   Branch,
   PullRequest,
   Source as ArtifactSource,
 } from "./constants.ts";
-import { ReleaseData, ReleaseResults } from "./releaseSchema.ts";
 
 type Args = {
   fetchUrlOnly: boolean;
 };
 
-type ReleaseCollection = {
-  key: ReleaseTargetKey;
-  data: ReleaseData;
-  collected: boolean;
-};
-
 type Collection = {
-  download?: DownloadData;
-  release?: ReleaseCollection;
+  download: DownloadData;
+  release?: ReleaseData;
 };
-
-const unavailable: ReleaseData = { status: "unavailable" };
 
 async function main() {
   const args = processArgs();
@@ -61,11 +57,9 @@ async function main() {
     successfulDownloads,
     totalTargets,
     releases,
-    successfulReleases,
-    totalReleaseTargets,
   } = await collectAllArtifacts(args);
 
-  if (totalSuccessfulDownloads + successfulReleases === 0) {
+  if (totalSuccessfulDownloads + releases.length === 0) {
     rootLogger.error("No artifacts were collected.");
     process.exit(1);
   }
@@ -85,7 +79,8 @@ async function main() {
   )) {
     rootLogger.info`${repoKey}: ${data.length} successful downloads / ${numTargets} targets`;
   }
-  rootLogger.info`Total: ${totalSuccessfulDownloads + successfulReleases} successful downloads / ${totalTargets + totalReleaseTargets} targets`;
+  rootLogger.info`Releases: ${releases.length} published / ${Object.keys(releaseTargets).length} targets`;
+  rootLogger.info`Total: ${totalSuccessfulDownloads} successful downloads / ${totalTargets} targets`;
 }
 
 function processArgs(): Args {
@@ -119,132 +114,111 @@ function processArgs(): Args {
 
 async function collectAllArtifacts(args: Args) {
   const successfulDownloads: Record<string, DownloadResult> = {};
-  const releases: ReleaseResults = Object.fromEntries(
-    Object.keys(releaseTargets).map((key) => [key, unavailable]),
-  );
-  const handledReleaseKeys = new Set<string>();
+  const releases: ReleaseData[] = [];
+
   let totalSuccessfulDownloads = 0;
   let totalTargets = 0;
-  let successfulReleases = 0;
 
   for (const [rawRepoKey, repo] of Object.entries(targetRepos)) {
-    if (!isTargetRepoKey(rawRepoKey)) {
-      throw new Error(`不明なWeb対象です: ${rawRepoKey}`);
-    }
-    const repoKey = rawRepoKey;
+    const repoKey = rawRepoKey as TargetRepoKey;
     rootLogger.info`Collecting artifacts for ${repo.repo}...`;
-    const { downloads, releaseCollections } = await collectArtifacts(
+    const { downloads, releases: repoReleases } = await collectArtifacts(
       args,
       repoKey,
     );
+
     successfulDownloads[repoKey] = downloads;
     totalSuccessfulDownloads += downloads.data.length;
     totalTargets += downloads.numTargets;
-    for (const release of releaseCollections) {
-      handledReleaseKeys.add(release.key);
-      releases[release.key] = release.data;
-      successfulReleases += Number(release.collected);
-    }
+    releases.push(...repoReleases);
   }
-
-  for (const [key, target] of Object.entries(releaseTargets)) {
-    if (handledReleaseKeys.has(key)) {
-      continue;
-    }
-    if (!isReleaseTargetKey(key)) {
-      throw new Error(`不明な配布対象です: ${key}`);
-    }
-    const releaseKey = key;
-    const log = rootLogger.getChild(key);
-    try {
-      const response = await octokit.rest.repos.getBranch({
-        ...splitRepoName(target.repo),
-        branch: target.branch,
-      });
-      const selected = await selectReleaseSource(
-        log,
-        releaseKey,
-        response.data.commit.sha,
-      );
-      const data = await collectRelease(
-        log,
-        releaseKey,
-        selected,
-        args.fetchUrlOnly,
-      );
-      releases[releaseKey] = data;
-      successfulReleases++;
-    } catch (error) {
-      log.error`Failed to process: ${error}`;
-    }
-  }
-
+  releases.push(...(await collectStandaloneReleases(args)));
   return {
     totalSuccessfulDownloads,
     successfulDownloads,
     totalTargets,
     releases,
-    successfulReleases,
-    totalReleaseTargets: Object.keys(releaseTargets).length,
   };
+}
+
+/** Web対象と共用しない配布対象の配布物を収集する。 */
+async function collectStandaloneReleases(args: Args): Promise<ReleaseData[]> {
+  const releases: ReleaseData[] = [];
+  for (const [rawReleaseKey, target] of Object.entries(releaseTargets)) {
+    if (rawReleaseKey in targetRepos) {
+      continue;
+    }
+    const releaseKey = rawReleaseKey as ReleaseTargetKey;
+    rootLogger.info`Collecting releases for ${target.repo}...`;
+    const log = rootLogger.getChild(releaseKey);
+    try {
+      const { data: branch } = await octokit.rest.repos.getBranch({
+        ...splitRepoName(target.repo),
+        branch: target.branch,
+      });
+      const releaseSource = await selectReleaseSource(
+        log,
+        releaseKey,
+        branch.commit.sha,
+      );
+      if (args.fetchUrlOnly) {
+        await checkReleaseArtifacts(log, releaseSource);
+      } else {
+        releases.push(await collectRelease(log, releaseSource));
+      }
+    } catch (e) {
+      log.error`Failed to process: ${e}`;
+    }
+  }
+  return releases;
 }
 
 async function collectArtifacts(
   args: Args,
   repoKey: TargetRepoKey,
-): Promise<{
-  downloads: DownloadResult;
-  releaseCollections: ReleaseCollection[];
-}> {
+): Promise<{ downloads: DownloadResult; releases: ReleaseData[] }> {
   const { filteredBranches, pullRequests } = await fetchTargets(repoKey);
-  const sources: ArtifactSource[] = [];
-  for (const branch of filteredBranches) {
-    sources.push({ type: "branch", branch });
-  }
-  for (const pullRequest of pullRequests) {
-    sources.push({ type: "pullRequest", pullRequest });
-  }
-  const results = await Promise.all(
-    sources.map((source) => collectArtifact(args, repoKey, source)),
+
+  const collections = await Promise.all(
+    [
+      filteredBranches.map(
+        (branch) =>
+          ({
+            type: "branch",
+            branch,
+          }) as const,
+      ),
+      pullRequests.map(
+        (pullRequest) =>
+          ({
+            type: "pullRequest",
+            pullRequest,
+          }) as const,
+      ),
+    ]
+      .flat()
+      .map((source) => collectArtifact(args, repoKey, source)),
   );
-  const data = results.flatMap((result) =>
-    result.download == undefined ? [] : [result.download],
-  );
-  const releaseCollections = results.flatMap((result) =>
-    result.release == undefined ? [] : [result.release],
+  const successfulCollections = collections.filter(
+    (collection) => collection != undefined,
   );
   return {
-    downloads: { repoKey, data, numTargets: results.length },
-    releaseCollections,
+    downloads: {
+      repoKey,
+      data: successfulCollections.map((collection) => collection.download),
+      numTargets: collections.length,
+    },
+    releases: successfulCollections
+      .map((collection) => collection.release)
+      .filter((release) => release != undefined),
   };
-}
-
-function findReleaseTarget(
-  repoKey: TargetRepoKey,
-  source: ArtifactSource,
-): ReleaseTargetKey | undefined {
-  if (source.type !== "branch") {
-    return;
-  }
-  const repo: string = targetRepos[repoKey].repo;
-  const entry = Object.entries(releaseTargets).find(
-    ([, target]) =>
-      target.repo === repo && target.branch === source.branch.name,
-  );
-  if (entry == undefined) {
-    return;
-  }
-  if (!isReleaseTargetKey(entry[0])) {
-    throw new Error(`不明な配布対象です: ${entry[0]}`);
-  }
-  return entry[0];
 }
 
 async function collectArtifact(
   args: Args,
   repoKey: TargetRepoKey,
   source: ArtifactSource,
-): Promise<Collection> {
+): Promise<Collection | undefined> {
   const log = rootLogger
     .getChild(repoKey)
     .getChild(
@@ -252,47 +226,53 @@ async function collectArtifact(
         ? `Branch ${source.branch.name}`
         : `PR #${source.pullRequest.number}`,
     );
-  const releaseKey = findReleaseTarget(repoKey, source);
+
   try {
-    const selected =
-      releaseKey == undefined || source.type !== "branch"
-        ? undefined
-        : await selectReleaseSource(log, releaseKey, source.branch.commit.sha);
+    const releaseSource = await selectSharedReleaseSource(log, repoKey, source);
     const artifact =
-      selected == undefined
+      releaseSource == undefined
         ? await Artifact.fetch(log, source, repoKey)
-        : await Artifact.fetchSelected(log, source, repoKey, selected.runId);
+        : await Artifact.fetchSelected(
+            log,
+            source,
+            repoKey,
+            releaseSource.runId,
+          );
+
     if (args.fetchUrlOnly) {
       log.info("Download skipped");
     } else {
       await artifact.downloadAndExtract();
       log.info("Done.");
     }
-    if (selected == undefined || releaseKey == undefined) {
-      return { download: artifact.toDownloadData() };
+
+    const download = artifact.toDownloadData();
+    if (releaseSource == undefined) {
+      return { download };
     }
-    const releaseData = await collectRelease(
-      log,
-      releaseKey,
-      selected,
-      args.fetchUrlOnly,
-    );
-    return {
-      download: artifact.toDownloadData(),
-      release: {
-        key: releaseKey,
-        data: releaseData,
-        collected: true,
-      },
-    };
-  } catch (error) {
-    log.error`Failed to process: ${error}`;
-    if (releaseKey != undefined) {
-      return {
-        release: { key: releaseKey, data: unavailable, collected: false },
-      };
+    if (args.fetchUrlOnly) {
+      await checkReleaseArtifacts(log, releaseSource);
+      return { download };
     }
-    return {};
+    return { download, release: await collectRelease(log, releaseSource) };
+  } catch (e) {
+    log.error`Failed to process: ${e}`;
+  }
+}
+
+/** Web対象のbranchが配布対象でもあれば、Webと配布で共用するrunを選ぶ。 */
+async function selectSharedReleaseSource(
+  log: Logger,
+  repoKey: TargetRepoKey,
+  source: ArtifactSource,
+): Promise<ReleaseSource | undefined> {
+  const key: string = repoKey;
+  if (
+    source.type === "branch" &&
+    isReleaseTargetKey(key) &&
+    releaseTargets[key].branch === source.branch.name
+  ) {
+    return selectReleaseSource(log, key, source.branch.commit.sha);
   }
 }
 
@@ -365,10 +345,6 @@ export class Artifact {
     const repo = targetRepos[repoKey].repo;
     const cachedUrl = await getCachedArtifact(repoKey, source, runId);
     const downloadUrl = cachedUrl || (await fetchArtifactUrl(log, repo, runId));
-
-    if (!downloadUrl) {
-      throw new Error(`Failed to fetch artifact URL for run ${runId}`);
-    }
 
     return new Artifact(
       log,

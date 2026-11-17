@@ -99,15 +99,23 @@ export function isReleaseTargetKey(key: string): key is ReleaseTargetKey {
   return key in releaseTargets;
 }
 
+export type TargetRepoKey = keyof typeof targetRepos;
+
 /** Web対象のkeyかどうかを判定する。 */
 export function isTargetRepoKey(key: string): key is TargetRepoKey {
   return key in targetRepos;
 }
 
-export type TargetRepoKey = keyof typeof targetRepos;
-
 export type DownloadResult = {
   repoKey: TargetRepoKey;
   data: DownloadData[];
   numTargets: number;
+};
+
+export type ReleaseData = {
+  key: ReleaseTargetKey;
+  branch: string;
+  commitSha: string;
+  runId: number;
+  files: { name: string; size: number; url: string }[];
 };

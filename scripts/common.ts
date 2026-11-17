@@ -35,6 +35,8 @@ export const destinationDir = `${import.meta.dirname}/../public/preview`;
 export const pagesBuildCheckName = "build_preview_pages";
 // ダウンロードするアーティファクトの名前
 export const artifactName = "preview-pages";
+// 配布するアーティファクトの名前の接頭辞
+export const releaseArtifactPrefix = "preview-pages-download-";
 // PagesのURL
 export const pagesUrl = "https://voicevox.github.io/preview-pages";
 

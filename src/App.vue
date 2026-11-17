@@ -50,18 +50,19 @@
       <section class="selector">
         <ElButtonGroup>
           <ElButton
-            v-for="(repo, repoKey) in selectableRepos"
+            v-for="(targetRepo, repoKey) in selectableRepos"
             :key="repoKey"
             :type="currentRepo === repoKey ? 'primary' : 'default'"
             @click="switchRepo(repoKey)"
           >
-            {{ repo.label }}（<a
-              :href="`https://github.com/${repo.repo}`"
+            {{ targetRepo.label }}（<a
+              :href="`https://github.com/${targetRepo.repo}`"
               target="_blank"
               rel="noopener noreferrer"
               class="download-source-link"
-              >{{ repo.repo }}</a
-            >）
+              >{{ targetRepo.repo }}</a
+            >
+            ）
           </ElButton>
         </ElButtonGroup>
       </section>
@@ -69,66 +70,100 @@
         <template v-if="downloads.loading || releases.loading">
           <ElLoading />
         </template>
-        <template v-else>
-          <ElCard v-for="card in cards" :key="card.key" class="download-card">
+        <template v-else-if="isTargetRepoKey(currentRepo)">
+          <ElCard
+            v-for="download in downloads.result[currentRepo].data"
+            :key="download.pathFragment"
+            class="download-card"
+          >
             <template #header>
-              <template v-if="card.type === 'branch'">
+              <template v-if="download.source.type === 'branch'">
                 <ElTag type="primary" disableTransitions>Branch</ElTag>
                 <a
                   class="download-source"
-                  :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${card.branch}`"
+                  :href="`https://github.com/${targetRepos[currentRepo].repo}/tree/${download.source.branch.name}`"
                   @click.stop
                 >
-                  {{ card.branch }}
+                  {{ download.source.branch.name }}
                 </a>
                 ：
                 <a
-                  :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${card.commitSha}`"
+                  :href="`https://github.com/${targetRepos[currentRepo].repo}/commit/${download.source.branch.commit.sha}`"
                   @click.stop
                 >
-                  {{ card.commitSha.slice(0, 7) }}
+                  {{ download.source.branch.commit.sha.slice(0, 7) }}
                 </a>
               </template>
-              <template v-else>
+              <template v-if="download.source.type === 'pullRequest'">
                 <ElTag type="success" disableTransitions>Pull Request</ElTag>
                 <a
                   class="download-source"
-                  :href="card.pullRequest.html_url"
+                  :href="download.source.pullRequest.html_url"
                   @click.stop
                 >
-                  #{{ card.pullRequest.number }} （{{
-                    card.pullRequest.title
+                  #{{ download.source.pullRequest.number }} （{{
+                    download.source.pullRequest.title
                   }}）
                 </a>
                 ：
                 <a
-                  :href="`https://github.com/${card.pullRequest.head.repo.full_name}/commit/${card.pullRequest.head.sha}`"
+                  :href="`https://github.com/${download.source.pullRequest.head.repo.full_name}/commit/${download.source.pullRequest.head.sha}`"
                   @click.stop
                 >
-                  {{ card.pullRequest.head.sha.slice(0, 7) }}（{{
-                    card.pullRequest.head.repo.full_name
+                  {{ download.source.pullRequest.head.sha.slice(0, 7) }}（{{
+                    download.source.pullRequest.head.repo.full_name
                   }}）
                 </a>
               </template>
             </template>
+
             <ElButton
-              v-for="link in card.links"
+              v-for="link in targetRepos[currentRepo].links"
               :key="link.label"
               :type="link.buttonType"
-              :href="link.href"
+              :href="joinUrl(`${download.pathFragment}/${link.path}`)"
               tag="a"
               target="_blank"
               >{{ link.label }}</ElButton
             >
             <ElButton
-              v-if="card.type === 'branch' && card.release != undefined"
+              v-if="
+                download.source.type === 'branch' &&
+                download.source.branch.name === currentRelease?.branch
+              "
               type="primary"
-              :href="releasePageUrl(card.branch)"
+              :href="releasePageUrl(download.source.branch.name)"
               tag="a"
               >リリース</ElButton
             >
           </ElCard>
         </template>
+        <ElCard v-else-if="currentRelease != undefined" class="download-card">
+          <template #header>
+            <ElTag type="primary" disableTransitions>Branch</ElTag>
+            <a
+              class="download-source"
+              :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${currentRelease.branch}`"
+              @click.stop
+            >
+              {{ currentRelease.branch }}
+            </a>
+            ：
+            <a
+              :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${currentRelease.commitSha}`"
+              @click.stop
+            >
+              {{ currentRelease.commitSha.slice(0, 7) }}
+            </a>
+          </template>
+
+          <ElButton
+            type="primary"
+            :href="releasePageUrl(currentRelease.branch)"
+            tag="a"
+            >リリース</ElButton
+          >
+        </ElCard>
       </section>
     </template>
   </main>
@@ -143,39 +178,17 @@ import {
   ElTag,
 } from "element-plus";
 import { computed, ref, watch } from "vue";
-import type { PullRequest } from "../scripts/constants.ts";
 import {
   isTargetRepoKey,
   releaseTargets,
   targetRepos,
 } from "../scripts/constants.ts";
-import type { AvailableRelease } from "../scripts/releaseSchema.ts";
 import { useDownloadData } from "./composables/useDownloadData.ts";
 import { useReleaseData } from "./composables/useReleaseData.ts";
 import { useColorScheme } from "./composables/useColorScheme.ts";
 
 const selectableRepos = { ...targetRepos, ...releaseTargets };
 type RepoKey = keyof typeof selectableRepos;
-type WebLink = {
-  href: string;
-  buttonType: "success" | "danger";
-  label: string;
-};
-type Card =
-  | {
-      type: "branch";
-      key: string;
-      branch: string;
-      commitSha: string;
-      links: readonly WebLink[];
-      release?: AvailableRelease;
-    }
-  | {
-      type: "pullRequest";
-      key: string;
-      pullRequest: PullRequest;
-      links: readonly WebLink[];
-    };
 
 const downloads = useDownloadData();
 const releases = useReleaseData();
@@ -189,76 +202,6 @@ const search = new URLSearchParams(location.search);
 const repoParam = search.get("repo");
 const currentRepo = ref<RepoKey>(isRepoKey(repoParam) ? repoParam : "editor");
 const releaseBranch = search.get("release");
-const repoPageUrl = computed(
-  () => `${location.pathname}?repo=${encodeURIComponent(currentRepo.value)}`,
-);
-const releasePageUrl = (branch: string) =>
-  `${repoPageUrl.value}&release=${encodeURIComponent(branch)}`;
-const joinUrl = (path: string) =>
-  `${import.meta.env.BASE_URL}/preview/${path}`.replace(/\/+/g, "/");
-
-const detailRelease = computed(() => {
-  if (releaseBranch == null || releases.value.loading) {
-    return undefined;
-  }
-  const release = releases.value.result[currentRepo.value];
-  if (release?.status === "available" && release.branch === releaseBranch) {
-    return release;
-  }
-  return undefined;
-});
-
-const cards = computed(() => {
-  if (downloads.value.loading || releases.value.loading) {
-    return [];
-  }
-  const repoKey = currentRepo.value;
-  const release = releases.value.result[repoKey];
-  const result: Card[] = [];
-  if (isTargetRepoKey(repoKey)) {
-    for (const download of downloads.value.result[repoKey].data) {
-      const links = targetRepos[repoKey].links.map((link) => ({
-        href: joinUrl(`${download.pathFragment}/${link.path}`),
-        buttonType: link.buttonType,
-        label: link.label,
-      }));
-      if (download.source.type === "branch") {
-        const branch = download.source.branch;
-        result.push({
-          type: "branch",
-          key: download.pathFragment,
-          branch: branch.name,
-          commitSha: branch.commit.sha,
-          links,
-          release:
-            release?.status === "available" &&
-            release.branch === branch.name &&
-            release.commitSha === branch.commit.sha
-              ? release
-              : undefined,
-        });
-      } else {
-        result.push({
-          type: "pullRequest",
-          key: download.pathFragment,
-          pullRequest: download.source.pullRequest,
-          links,
-        });
-      }
-    }
-  } else if (release?.status === "available") {
-    result.push({
-      type: "branch",
-      key: `${repoKey}-${release.branch}`,
-      branch: release.branch,
-      commitSha: release.commitSha,
-      links: [],
-      release,
-    });
-  }
-  return result;
-});
-
 const switchRepo = (repoKey: RepoKey) => {
   currentRepo.value = repoKey;
 };
@@ -267,6 +210,28 @@ watch(currentRepo, (newVal) => {
   next.set("repo", newVal);
   history.replaceState(null, "", `${location.pathname}?${next.toString()}`);
 });
+
+const currentRelease = computed(() => {
+  if (releases.value.loading) {
+    return undefined;
+  }
+  return releases.value.result.find(
+    (release) => release.key === currentRepo.value,
+  );
+});
+const detailRelease = computed(() =>
+  currentRelease.value?.branch === releaseBranch
+    ? currentRelease.value
+    : undefined,
+);
+
+const repoPageUrl = computed(
+  () => `${location.pathname}?repo=${currentRepo.value}`,
+);
+const releasePageUrl = (branch: string) =>
+  `${repoPageUrl.value}&release=${encodeURIComponent(branch)}`;
+const joinUrl = (path: string) =>
+  `${import.meta.env.BASE_URL}/preview/${path}`.replace(/\/+/g, "/");
 
 const formatFileSize = (size: number): string => {
   if (size >= 1_073_741_824) {

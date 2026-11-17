@@ -1,19 +1,19 @@
 import { Semaphore } from "@core/asyncutil";
 import { Logger } from "@logtape/logtape";
-import { RequestError } from "octokit";
+import { Endpoints } from "@octokit/types";
 import {
   artifactName,
   octokit,
   pagesBuildCheckName,
+  releaseArtifactPrefix,
   splitRepoName,
 } from "./common.ts";
 
 const jobWaitSemaphore = new Semaphore(5);
 
 type JobAndRunId = { jobId: number; runId: number };
-type Artifact = Awaited<
-  ReturnType<typeof octokit.rest.actions.listWorkflowRunArtifacts>
->["data"]["artifacts"][number];
+type WorkflowArtifact =
+  Endpoints["GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"]["response"]["data"]["artifacts"][number];
 
 function getRunId(detailsUrl: string | null): number {
   if (detailsUrl == null || detailsUrl === "") {
@@ -124,37 +124,25 @@ export async function waitForJobCompletion(
 export async function fetchArtifactDownloadUrl(
   log: Logger,
   repo: `${string}/${string}`,
-  artifact: Artifact,
-): Promise<string | undefined> {
+  artifact: WorkflowArtifact,
+): Promise<string> {
   log.info`Fetching artifact URL: ${artifact.name}`;
-  try {
-    const response = await octokit.request(
-      "GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}",
-      {
-        ...splitRepoName(repo),
-        artifact_id: artifact.id,
-        archive_format: "zip",
-        request: { redirect: "manual", parseSuccessResponseBody: false },
-      },
-    );
-    if (response.data instanceof ReadableStream) {
-      await response.data.cancel();
-    }
-    if (
-      response.status !== 302 ||
-      response.headers.location == null ||
-      response.headers.location === ""
-    ) {
-      throw new Error(`Artifactの取得先を解決できません: ${artifact.name}`);
-    }
-    return new URL(response.headers.location, response.url).href;
-  } catch (error) {
-    if (error instanceof RequestError && error.status === 410) {
-      log.error("Artifact is expired");
-      return;
-    }
-    throw error;
+  const response = await octokit.request(
+    "GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}",
+    {
+      ...splitRepoName(repo),
+      artifact_id: artifact.id,
+      archive_format: "zip",
+      request: { redirect: "manual", parseSuccessResponseBody: false },
+    },
+  );
+  if (response.data instanceof ReadableStream) {
+    await response.data.cancel();
   }
+  if (response.headers.location == undefined) {
+    throw new Error(`Artifact "${artifact.name}" does not have a download URL`);
+  }
+  return response.headers.location;
 }
 
 /** 指定runのArtifactを処理直前に取得する。 */
@@ -162,7 +150,7 @@ export async function fetchArtifactUrl(
   log: Logger,
   repo: `${string}/${string}`,
   runId: number,
-): Promise<string | undefined> {
+): Promise<string> {
   const buildPage = await octokit.request(
     "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
     { ...splitRepoName(repo), run_id: runId },
@@ -180,13 +168,13 @@ export async function fetchArtifactUrl(
 export async function fetchReleaseArtifacts(
   repo: `${string}/${string}`,
   runId: number,
-): Promise<Artifact[]> {
+): Promise<WorkflowArtifact[]> {
   const artifacts = await octokit.paginate(
     "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
     { ...splitRepoName(repo), run_id: runId, per_page: 100 },
   );
   const releaseArtifacts = artifacts.filter((artifact) =>
-    artifact.name.startsWith("preview-pages-download-"),
+    artifact.name.startsWith(releaseArtifactPrefix),
   );
   if (releaseArtifacts.length === 0) {
     throw new Error(`No release artifacts found in run ${runId}`);
