@@ -30,7 +30,6 @@ async function main() {
         await octokit.rest.git.deleteRef({
           ...splitRepoName(cacheRepo),
           ref: `tags/${release.tag_name}`,
-          request: { retries: 0 },
         });
       } catch (error) {
         if (!(error instanceof RequestError && error.status === 404)) {
@@ -40,7 +39,6 @@ async function main() {
       await octokit.rest.repos.deleteRelease({
         ...splitRepoName(cacheRepo),
         release_id: release.id,
-        request: { retries: 0 },
       });
       rootLogger.info`Deleted old release: ${release.tag_name}`;
     }

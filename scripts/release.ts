@@ -53,12 +53,10 @@ export async function createRelease(
   const response = await releaseClient.rest.repos.createRelease({
     ...splitRepoName(cacheRepo),
     tag_name: getReleaseTag(key, runId),
-    target_commitish: process.env.GITHUB_SHA,
     name: `${target.label} ${target.branch} run ${runId}`,
     body: `${target.repo} の ${target.branch}、${commitSha} の配布ファイルです。`,
     draft: true,
     prerelease: true,
-    request: { retries: 0 },
   });
   return response.data;
 }

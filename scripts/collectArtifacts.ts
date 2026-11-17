@@ -70,12 +70,10 @@ async function main() {
     `${destinationDir}/downloads.json`,
     JSON.stringify(successfulDownloads, null, 2),
   );
-  if (!args.fetchUrlOnly) {
-    await fs.writeFile(
-      `${destinationDir}/releases.json`,
-      JSON.stringify(releases, null, 2),
-    );
-  }
+  await fs.writeFile(
+    `${destinationDir}/releases.json`,
+    JSON.stringify(releases, null, 2),
+  );
   rootLogger.info`Done:`;
   for (const { repoKey, data, numTargets } of Object.values(
     successfulDownloads,
