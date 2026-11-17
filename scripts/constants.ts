@@ -94,11 +94,6 @@ export const releaseTargets = {
 
 export type ReleaseTargetKey = keyof typeof releaseTargets;
 
-/** 配布対象のkeyかどうかを判定する。 */
-export function isReleaseTargetKey(key: string): key is ReleaseTargetKey {
-  return key in releaseTargets;
-}
-
 export type TargetRepoKey = keyof typeof targetRepos;
 
 /** Web対象のkeyかどうかを判定する。 */

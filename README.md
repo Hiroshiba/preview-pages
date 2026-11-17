@@ -21,7 +21,7 @@ curl https://voicevox.github.io/preview-pages/preview/releases.json -o ./public/
 pnpm run dev
 ```
 
-### GitHubへ書き込まず取得可否を確認する場合
+### コメントの追加などの書き込み系の動作なしで動かす場合
 
 1. GitHub の Personal Access Token を取得します。
 2. `.env.example` をコピーして `.env` を作成します。内容はコメントを参照してください。
@@ -41,8 +41,6 @@ pnpm run run:collect-artifacts --fetchUrlOnly
 - Actions：Read
 - Checks：Read
 
-開発版を配布する場合、preview-pagesのUpdate Pages workflowにはReleaseの作成・削除に使う `contents: write` と `GITHUB_TOKEN` が必要です。
-
 #### Actionsで動かす
 
 2. 作成したGitHub Appsの`Private key`を取得し、リポジトリの`Settings` > `Secrets` に`PRIVATE_KEY`として保存します。
@@ -52,7 +50,7 @@ pnpm run run:collect-artifacts --fetchUrlOnly
 
 2. 作成したGitHub Appsの`Private key`を取得し、`private-key.pem`として保存します。
 3. `.env.example` をコピーして `.env` を作成します。内容はコメントを参照してください。
-4. `GITHUB_TOKEN` にpreview-pagesのContents: Read and write権限を持つPersonal Access Tokenを設定します。Releaseの書き込みにはGitHub Appsの認証情報とは別に必要です。
+4. `GITHUB_TOKEN` にpreview-pagesのContents: Read and write権限を持つPersonal Access Tokenを設定します。
 5. 以下のコマンドを実行します：
 
 ```
@@ -94,24 +92,13 @@ sequenceDiagram
 開発版の配布対象は `scripts/constants.ts` の `releaseTargets` に登録します。
 Webと配布を同じカードに表示する場合は、`targetRepos` と `releaseTargets` で同じkeyとリポジトリを使います。
 
-受け側は次のように配布物を集めます。
+配布対象のリポジトリは次のようにしてください。
 
-- 登録したリポジトリと追跡ブランチの、成功した `build_preview_pages` checkから一つのrunを選びます。
-- そのrunの `preview-pages-download-` で始まるActions Artifactに入った通常ファイルを、run別のReleaseへ保存します。
-  - ファイル名は、階層の有無にかかわらず葉の元ファイル名にします。
-  - ディレクトリは配布ファイルに含めません。
-  - 同じReleaseに入る全Artifactで、葉のファイル名が重複しないようにしてください。
-- 配布用Artifactが一件もない場合は、配布物を表示しません。
-- Webも提供する対象は、同じrunにWeb用の `preview-pages` Artifactを置きます。
-- 配布ファイルは `releases.json`、Webは `downloads.json` に記録し、画面では同じブランチとコミットのカードに表示します。
-- 古い配布ReleaseはPages公開後に整理します。
-
-送信側は次のようにしてください。
-
-- 同じリポジトリとブランチの一回の更新で必要なWebと配布ファイルを、すべて同じworkflow runへuploadします。
+- 配布ファイルを、名前が `preview-pages-download-` で始まるArtifactとしてuploadします。
+  - Artifact内の階層は無視し、ファイル名だけで保存します。同じrunの全Artifactでファイル名が重複しないようにしてください。
+- Webも提供する場合は、Web用の `preview-pages` Artifactを同じrunへuploadします。
 - すべてのuploadが終わってから `build_preview_pages` checkを成功させます。
-- その成功に依存する通知jobから、入力なしの `update_pages.yml` を一回起動します。通知は収集の合図であり、run IDやコミットは渡しません。
-- Webと配布物を別のrunに分けたまま `releaseTargets` へ登録することはできません。
+- その成功に依存するjobから `update_pages.yml` を起動します。
 
 ## リポジトリの追加
 
@@ -134,7 +121,7 @@ Webと配布を同じカードに表示する場合は、`targetRepos` と `rele
   },
 ```
 
-2. Webプレビューだけを提供するリポジトリには以下の2つのWorkflowを追加します。開発版も配布する場合は、上記の契約に従い、ビルド完了後の通知jobから起動してください。
+2. 追加するリポジトリに以下の2つのWorkflowを追加します。
 
 <details>
 <summary>DANGEROUS_trigger_preview_pages.yml</summary>

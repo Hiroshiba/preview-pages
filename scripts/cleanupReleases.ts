@@ -8,17 +8,14 @@ import {
   splitRepoName,
 } from "./common.ts";
 import { ReleaseData } from "./constants.ts";
-import { getReleaseTag, getReleaseTagPrefix } from "./release.ts";
+import { getReleaseTag, getReleaseTagPrefix, listReleases } from "./release.ts";
 
 async function main() {
   const releasesData = JSON.parse(
     await fs.readFile(`${destinationDir}/releases.json`, "utf8"),
   ) as ReleaseData[];
 
-  const releases = await octokit.paginate(
-    "GET /repos/{owner}/{repo}/releases",
-    { ...splitRepoName(cacheRepo), per_page: 100 },
-  );
+  const releases = await listReleases();
   for (const data of releasesData) {
     const prefix = getReleaseTagPrefix(data.key);
     const retainedTag = getReleaseTag(data.key, data.runId);

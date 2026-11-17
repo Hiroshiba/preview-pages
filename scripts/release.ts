@@ -24,15 +24,20 @@ export function getReleaseTag(key: ReleaseTargetKey, runId: number): string {
   return `${getReleaseTagPrefix(key)}${runId}`;
 }
 
+/** draftを含むすべてのReleaseを取得する。 */
+export async function listReleases(): Promise<Release[]> {
+  return releaseClient.paginate("GET /repos/{owner}/{repo}/releases", {
+    ...splitRepoName(cacheRepo),
+    per_page: 100,
+  });
+}
+
 /** 指定runのReleaseを取得する。 */
 export async function getRelease(
   key: ReleaseTargetKey,
   runId: number,
 ): Promise<Release | undefined> {
-  const releases = await releaseClient.paginate(
-    "GET /repos/{owner}/{repo}/releases",
-    { ...splitRepoName(cacheRepo), per_page: 100 },
-  );
+  const releases = await listReleases();
   return releases.find(
     (release) => release.tag_name === getReleaseTag(key, runId),
   );

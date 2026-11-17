@@ -9,163 +9,161 @@
       VOICEVOX Preview Pages
     </a>
   </header>
-  <main class="main">
-    <template v-if="detailRelease != undefined">
-      <div class="release-detail">
-        <nav class="release-nav">
-          <a :href="repoPageUrl"
-            >{{ selectableRepos[currentRepo].label }}の一覧</a
-          >
-          ／ {{ detailRelease.branch }}のリリース
-        </nav>
-        <h2>{{ selectableRepos[currentRepo].label }}の開発版リリース</h2>
-        <a :href="`https://github.com/${selectableRepos[currentRepo].repo}`">
-          {{ selectableRepos[currentRepo].repo }}
+  <main v-if="detailRelease != undefined" class="main">
+    <div class="release-detail">
+      <nav class="release-nav">
+        <a :href="repoPageUrl"
+          >{{ selectableRepos[currentRepo].label }}の一覧</a
+        >
+        ／ {{ detailRelease.branch }}のリリース
+      </nav>
+      <h2>{{ selectableRepos[currentRepo].label }}の開発版リリース</h2>
+      <a :href="`https://github.com/${selectableRepos[currentRepo].repo}`">
+        {{ selectableRepos[currentRepo].repo }}
+      </a>
+      <div class="release-source">
+        <ElTag type="primary" disableTransitions>Branch</ElTag>
+        <a
+          :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${detailRelease.branch}`"
+        >
+          {{ detailRelease.branch }}
         </a>
-        <div class="release-source">
-          <ElTag type="primary" disableTransitions>Branch</ElTag>
-          <a
-            :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${detailRelease.branch}`"
-          >
-            {{ detailRelease.branch }}
-          </a>
-          <span>コミット</span>
-          <a
-            :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${detailRelease.commitSha}`"
-          >
-            {{ detailRelease.commitSha.slice(0, 7) }}
-          </a>
-        </div>
-        <h3>配布ファイル</h3>
-        <ul class="release-files">
-          <li v-for="file in detailRelease.files" :key="file.name">
-            <a :href="file.url">{{ file.name }}</a>
-            <span>{{ formatFileSize(file.size) }}</span>
-          </li>
-        </ul>
+        <span>コミット</span>
+        <a
+          :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${detailRelease.commitSha}`"
+        >
+          {{ detailRelease.commitSha.slice(0, 7) }}
+        </a>
       </div>
-    </template>
-    <template v-else>
-      <p>プレビューするBranchまたはPull Requestを選択してください。</p>
-      <section class="selector">
-        <ElButtonGroup>
-          <ElButton
-            v-for="(targetRepo, repoKey) in selectableRepos"
-            :key="repoKey"
-            :type="currentRepo === repoKey ? 'primary' : 'default'"
-            @click="switchRepo(repoKey)"
+      <h3>配布ファイル</h3>
+      <ul class="release-files">
+        <li v-for="file in detailRelease.files" :key="file.name">
+          <a :href="file.url">{{ file.name }}</a>
+          <span>{{ formatFileSize(file.size) }}</span>
+        </li>
+      </ul>
+    </div>
+  </main>
+  <main v-else class="main">
+    <p>プレビューするBranchまたはPull Requestを選択してください。</p>
+    <section class="selector">
+      <ElButtonGroup>
+        <ElButton
+          v-for="(targetRepo, repoKey) in selectableRepos"
+          :key="repoKey"
+          :type="currentRepo === repoKey ? 'primary' : 'default'"
+          @click="switchRepo(repoKey)"
+        >
+          {{ targetRepo.label }}（<a
+            :href="`https://github.com/${targetRepo.repo}`"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="download-source-link"
+            >{{ targetRepo.repo }}</a
           >
-            {{ targetRepo.label }}（<a
-              :href="`https://github.com/${targetRepo.repo}`"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="download-source-link"
-              >{{ targetRepo.repo }}</a
-            >
-            ）
-          </ElButton>
-        </ElButtonGroup>
-      </section>
-      <section class="downloads">
-        <template v-if="downloads.loading || releases.loading">
-          <ElLoading />
-        </template>
-        <template v-else-if="isTargetRepoKey(currentRepo)">
-          <ElCard
-            v-for="download in downloads.result[currentRepo].data"
-            :key="download.pathFragment"
-            class="download-card"
-          >
-            <template #header>
-              <template v-if="download.source.type === 'branch'">
-                <ElTag type="primary" disableTransitions>Branch</ElTag>
-                <a
-                  class="download-source"
-                  :href="`https://github.com/${targetRepos[currentRepo].repo}/tree/${download.source.branch.name}`"
-                  @click.stop
-                >
-                  {{ download.source.branch.name }}
-                </a>
-                ：
-                <a
-                  :href="`https://github.com/${targetRepos[currentRepo].repo}/commit/${download.source.branch.commit.sha}`"
-                  @click.stop
-                >
-                  {{ download.source.branch.commit.sha.slice(0, 7) }}
-                </a>
-              </template>
-              <template v-if="download.source.type === 'pullRequest'">
-                <ElTag type="success" disableTransitions>Pull Request</ElTag>
-                <a
-                  class="download-source"
-                  :href="download.source.pullRequest.html_url"
-                  @click.stop
-                >
-                  #{{ download.source.pullRequest.number }} （{{
-                    download.source.pullRequest.title
-                  }}）
-                </a>
-                ：
-                <a
-                  :href="`https://github.com/${download.source.pullRequest.head.repo.full_name}/commit/${download.source.pullRequest.head.sha}`"
-                  @click.stop
-                >
-                  {{ download.source.pullRequest.head.sha.slice(0, 7) }}（{{
-                    download.source.pullRequest.head.repo.full_name
-                  }}）
-                </a>
-              </template>
-            </template>
-
-            <ElButton
-              v-for="link in targetRepos[currentRepo].links"
-              :key="link.label"
-              :type="link.buttonType"
-              :href="joinUrl(`${download.pathFragment}/${link.path}`)"
-              tag="a"
-              target="_blank"
-              >{{ link.label }}</ElButton
-            >
-            <ElButton
-              v-if="
-                download.source.type === 'branch' &&
-                download.source.branch.name === currentRelease?.branch
-              "
-              type="primary"
-              :href="releasePageUrl(download.source.branch.name)"
-              tag="a"
-              >リリース</ElButton
-            >
-          </ElCard>
-        </template>
-        <ElCard v-else-if="currentRelease != undefined" class="download-card">
+          ）
+        </ElButton>
+      </ElButtonGroup>
+    </section>
+    <section class="downloads">
+      <template v-if="downloads.loading || releases.loading">
+        <ElLoading />
+      </template>
+      <template v-else-if="isTargetRepoKey(currentRepo)">
+        <ElCard
+          v-for="download in downloads.result[currentRepo].data"
+          :key="download.pathFragment"
+          class="download-card"
+        >
           <template #header>
-            <ElTag type="primary" disableTransitions>Branch</ElTag>
-            <a
-              class="download-source"
-              :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${currentRelease.branch}`"
-              @click.stop
-            >
-              {{ currentRelease.branch }}
-            </a>
-            ：
-            <a
-              :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${currentRelease.commitSha}`"
-              @click.stop
-            >
-              {{ currentRelease.commitSha.slice(0, 7) }}
-            </a>
+            <template v-if="download.source.type === 'branch'">
+              <ElTag type="primary" disableTransitions>Branch</ElTag>
+              <a
+                class="download-source"
+                :href="`https://github.com/${targetRepos[currentRepo].repo}/tree/${download.source.branch.name}`"
+                @click.stop
+              >
+                {{ download.source.branch.name }}
+              </a>
+              ：
+              <a
+                :href="`https://github.com/${targetRepos[currentRepo].repo}/commit/${download.source.branch.commit.sha}`"
+                @click.stop
+              >
+                {{ download.source.branch.commit.sha.slice(0, 7) }}
+              </a>
+            </template>
+            <template v-if="download.source.type === 'pullRequest'">
+              <ElTag type="success" disableTransitions>Pull Request</ElTag>
+              <a
+                class="download-source"
+                :href="download.source.pullRequest.html_url"
+                @click.stop
+              >
+                #{{ download.source.pullRequest.number }} （{{
+                  download.source.pullRequest.title
+                }}）
+              </a>
+              ：
+              <a
+                :href="`https://github.com/${download.source.pullRequest.head.repo.full_name}/commit/${download.source.pullRequest.head.sha}`"
+                @click.stop
+              >
+                {{ download.source.pullRequest.head.sha.slice(0, 7) }}（{{
+                  download.source.pullRequest.head.repo.full_name
+                }}）
+              </a>
+            </template>
           </template>
 
           <ElButton
+            v-for="link in targetRepos[currentRepo].links"
+            :key="link.label"
+            :type="link.buttonType"
+            :href="joinUrl(`${download.pathFragment}/${link.path}`)"
+            tag="a"
+            target="_blank"
+            >{{ link.label }}</ElButton
+          >
+          <ElButton
+            v-if="
+              download.source.type === 'branch' &&
+              download.source.branch.name === currentRelease?.branch
+            "
             type="primary"
-            :href="releasePageUrl(currentRelease.branch)"
+            :href="releasePageUrl(download.source.branch.name)"
             tag="a"
             >リリース</ElButton
           >
         </ElCard>
-      </section>
-    </template>
+      </template>
+      <ElCard v-else-if="currentRelease != undefined" class="download-card">
+        <template #header>
+          <ElTag type="primary" disableTransitions>Branch</ElTag>
+          <a
+            class="download-source"
+            :href="`https://github.com/${selectableRepos[currentRepo].repo}/tree/${currentRelease.branch}`"
+            @click.stop
+          >
+            {{ currentRelease.branch }}
+          </a>
+          ：
+          <a
+            :href="`https://github.com/${selectableRepos[currentRepo].repo}/commit/${currentRelease.commitSha}`"
+            @click.stop
+          >
+            {{ currentRelease.commitSha.slice(0, 7) }}
+          </a>
+        </template>
+
+        <ElButton
+          type="primary"
+          :href="releasePageUrl(currentRelease.branch)"
+          tag="a"
+          >リリース</ElButton
+        >
+      </ElCard>
+    </section>
   </main>
 </template>
 
@@ -177,7 +175,7 @@ import {
   ElLoading,
   ElTag,
 } from "element-plus";
-import { computed, ref, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import {
   isTargetRepoKey,
   releaseTargets,
@@ -194,23 +192,24 @@ const downloads = useDownloadData();
 const releases = useReleaseData();
 useColorScheme();
 
-function isRepoKey(value: string | null): value is RepoKey {
-  return value != null && value in selectableRepos;
-}
-
-const search = new URLSearchParams(location.search);
-const repoParam = search.get("repo");
-const currentRepo = ref<RepoKey>(isRepoKey(repoParam) ? repoParam : "editor");
-const releaseBranch = search.get("release");
-const switchRepo = (repoKey: RepoKey) => {
-  currentRepo.value = repoKey;
+const currentRepo = ref<RepoKey>("editor");
+const switchRepo = (repo: RepoKey) => {
+  currentRepo.value = repo;
 };
+onMounted(() => {
+  const search = new URLSearchParams(location.search);
+  const repo = search.get("repo") as RepoKey | null;
+  if (repo && repo in selectableRepos) {
+    currentRepo.value = repo;
+  }
+});
 watch(currentRepo, (newVal) => {
-  const next = new URLSearchParams(location.search);
-  next.set("repo", newVal);
-  history.replaceState(null, "", `${location.pathname}?${next.toString()}`);
+  const search = new URLSearchParams(location.search);
+  search.set("repo", newVal);
+  history.replaceState(null, "", `${location.pathname}?${search.toString()}`);
 });
 
+const releaseBranch = new URLSearchParams(location.search).get("release");
 const currentRelease = computed(() => {
   if (releases.value.loading) {
     return undefined;
