@@ -1,55 +1,76 @@
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
-import { Octokit } from "octokit";
-import { Asset, cacheRepo, splitRepoName } from "./common.ts";
+import { Octokit, RequestError } from "octokit";
 import {
-  Release,
-  ReleaseData,
-  TargetRepoKey,
-  targetRepos,
-} from "./constants.ts";
+  Asset,
+  cacheRepo,
+  distributionReleaseName,
+  rootLogger,
+  splitRepoName,
+} from "./common.ts";
+import { Release, ReleaseData, TargetRepoKey } from "./constants.ts";
 
 export type ReleaseSource = Omit<ReleaseData, "files">;
+
+const log = rootLogger.getChild("release");
 
 const releaseClient = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
 
-export function getReleaseTagPrefix(repoKey: TargetRepoKey): string {
-  return `preview-pages-release-${repoKey}-run-`;
-}
-
-export function getReleaseTag(repoKey: TargetRepoKey, runId: number): string {
-  return `${getReleaseTagPrefix(repoKey)}${runId}`;
-}
-
-export async function listReleases(): Promise<Release[]> {
-  return releaseClient.paginate("GET /repos/{owner}/{repo}/releases", {
-    ...splitRepoName(cacheRepo),
-    per_page: 100,
-  });
-}
-
-export async function getRelease(
+export function createReleaseFilePrefix(
   repoKey: TargetRepoKey,
-  runId: number,
-): Promise<Release | undefined> {
-  const releases = await listReleases();
-  return releases.find(
-    (release) => release.tag_name === getReleaseTag(repoKey, runId),
-  );
+  branch: string,
+): string {
+  return `${repoKey}-branch-${branch}-`;
 }
 
-export async function createRelease(source: ReleaseSource): Promise<Release> {
-  const target = targetRepos[source.repoKey];
+export function createReleaseRunPrefix(source: ReleaseSource): string {
+  return `${createReleaseFilePrefix(source.repoKey, source.branch)}${source.runId}-`;
+}
+
+export function createReleaseFileName(
+  source: ReleaseSource,
+  name: string,
+): string {
+  return `${createReleaseRunPrefix(source)}${name}`;
+}
+
+export function createReleaseInfoFileName(source: ReleaseSource): string {
+  return `${createReleaseRunPrefix(source)}v1.json`;
+}
+
+export async function getRelease(): Promise<Release | undefined> {
+  try {
+    const response = await releaseClient.rest.repos.getReleaseByTag({
+      ...splitRepoName(cacheRepo),
+      tag: distributionReleaseName,
+    });
+    return response.data;
+  } catch (error) {
+    if (error instanceof RequestError && error.status === 404) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+export async function createReleaseIfNotExists(): Promise<Release> {
+  log.info`Checking if release ${distributionReleaseName} exists...`;
+  const existingRelease = await getRelease();
+  if (existingRelease != undefined) {
+    log.info`Release ${distributionReleaseName} already exists.`;
+    return existingRelease;
+  }
+
+  log.info`Creating release ${distributionReleaseName}...`;
   const response = await releaseClient.rest.repos.createRelease({
     ...splitRepoName(cacheRepo),
-    tag_name: getReleaseTag(source.repoKey, source.runId),
-    name: `${target.label} ${source.branch} run ${source.runId}`,
-    body: `${target.repo} の ${source.branch}、${source.commitSha} の配布ファイルです。`,
-    draft: true,
+    tag_name: distributionReleaseName,
+    name: "Preview Pages Release",
+    body: "preview-pagesの開発版を配布するリリース。手動で編集しないでください。",
     prerelease: true,
   });
+  log.info`Release ${distributionReleaseName} created.`;
   return response.data;
 }
 
@@ -58,50 +79,31 @@ export async function ensureReleaseAsset(
   name: string,
   filePath: string,
 ): Promise<Asset> {
-  const size = (await fs.stat(filePath)).size;
   const existing = release.assets.find((asset) => asset.name === name);
   if (existing != undefined) {
-    if (existing.state === "uploaded" && existing.size === size) {
+    if (existing.state === "uploaded") {
+      log.info`Asset ${name} already exists, skipping upload.`;
       return existing;
     }
-    await releaseClient.rest.repos.deleteReleaseAsset({
-      ...splitRepoName(cacheRepo),
-      asset_id: existing.id,
-    });
+    await deleteReleaseAsset(existing);
   }
 
+  log.info`Uploading ${name}...`;
   const response = await releaseClient.rest.repos.uploadReleaseAsset({
     ...splitRepoName(cacheRepo),
     release_id: release.id,
     name,
-    headers: {
-      "content-type": "application/octet-stream",
-      "content-length": size,
-    },
-    request: { retries: 0 },
-    // @ts-expect-error Octokitの型定義はstreamを受け付けない
-    data: fsSync.createReadStream(filePath),
+    // 指定しないとapplication/jsonとして保存される
+    headers: { "content-type": "application/octet-stream" },
+    // @ts-expect-error octokitの型定義が間違っている。 https://github.com/octokit/octokit.js/discussions/2087
+    data: await fs.readFile(filePath),
   });
   return response.data;
 }
 
-export async function publishRelease(release: Release): Promise<void> {
-  await releaseClient.rest.repos.updateRelease({
+export async function deleteReleaseAsset(asset: Asset): Promise<void> {
+  await releaseClient.rest.repos.deleteReleaseAsset({
     ...splitRepoName(cacheRepo),
-    release_id: release.id,
-    draft: false,
-  });
-}
-
-export async function deleteRelease(release: Release): Promise<void> {
-  if (!release.draft) {
-    await releaseClient.rest.git.deleteRef({
-      ...splitRepoName(cacheRepo),
-      ref: `tags/${release.tag_name}`,
-    });
-  }
-  await releaseClient.rest.repos.deleteRelease({
-    ...splitRepoName(cacheRepo),
-    release_id: release.id,
+    asset_id: asset.id,
   });
 }

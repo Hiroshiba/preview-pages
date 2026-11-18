@@ -44,6 +44,8 @@ export const pagesUrl = "https://voicevox.github.io/preview-pages";
 export const cacheRepo = "voicevox/preview-pages";
 // キャッシュのリリース名
 export const cacheReleaseName = "preview-pages-cache";
+// 配布ファイルのリリース名
+export const distributionReleaseName = "preview-pages-release";
 
 await logtape.configure({
   sinks: {

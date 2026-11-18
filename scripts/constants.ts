@@ -69,7 +69,6 @@ export const targetRepos = {
   engine: {
     repo: "VOICEVOX/voicevox_engine",
     label: "エンジン",
-    links: [],
     releaseBranch: "master",
   },
 } as const satisfies Record<
@@ -78,7 +77,7 @@ export const targetRepos = {
     repo: string;
     label: string;
 
-    links: {
+    links?: {
       path: string;
       buttonType: "success" | "danger";
       emoji: string;

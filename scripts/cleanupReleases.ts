@@ -1,31 +1,41 @@
 import fs from "node:fs/promises";
-import { destinationDir, rootLogger } from "./common.ts";
+import {
+  destinationDir,
+  distributionReleaseName,
+  rootLogger,
+} from "./common.ts";
 import { ReleaseData } from "./constants.ts";
 import {
-  deleteRelease,
-  getReleaseTag,
-  getReleaseTagPrefix,
-  listReleases,
+  createReleaseFilePrefix,
+  createReleaseRunPrefix,
+  deleteReleaseAsset,
+  getRelease,
 } from "./release.ts";
+
+const log = rootLogger.getChild("cleanup");
 
 async function main() {
   const releasesData = JSON.parse(
     await fs.readFile(`${destinationDir}/releases.json`, "utf8"),
   ) as ReleaseData[];
 
-  const releases = await listReleases();
+  const release = await getRelease();
+  if (release == undefined) {
+    log.info`Release ${distributionReleaseName} not found. Nothing to clean.`;
+    return;
+  }
   for (const data of releasesData) {
-    const prefix = getReleaseTagPrefix(data.repoKey);
-    const retainedTag = getReleaseTag(data.repoKey, data.runId);
-    for (const release of releases) {
+    const prefix = createReleaseFilePrefix(data.repoKey, data.branch);
+    const retainedPrefix = createReleaseRunPrefix(data);
+    for (const asset of release.assets) {
       if (
-        !release.tag_name.startsWith(prefix) ||
-        release.tag_name === retainedTag
+        !asset.name.startsWith(prefix) ||
+        asset.name.startsWith(retainedPrefix)
       ) {
         continue;
       }
-      await deleteRelease(release);
-      rootLogger.info`Deleted old release: ${release.tag_name}`;
+      log.info`Deleting ${asset.name}...`;
+      await deleteReleaseAsset(asset);
     }
   }
 }

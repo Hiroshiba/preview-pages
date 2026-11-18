@@ -64,12 +64,12 @@
       </ElButtonGroup>
     </section>
     <section class="downloads">
-      <template v-if="downloads.loading || releases.loading">
+      <template v-if="previewData.loading">
         <ElLoading />
       </template>
-      <template v-else>
+      <template v-else-if="'links' in currentTargetRepo">
         <ElCard
-          v-for="download in downloads.result[currentRepo].data"
+          v-for="download in previewData.downloads[currentRepo].data"
           :key="download.pathFragment"
           class="download-card"
         >
@@ -115,7 +115,7 @@
           </template>
 
           <ElButton
-            v-for="link in targetRepos[currentRepo].links"
+            v-for="link in currentTargetRepo.links"
             :key="link.label"
             :type="link.buttonType"
             :href="joinUrl(`${download.pathFragment}/${link.path}`)"
@@ -134,39 +134,33 @@
             >リリース</ElButton
           >
         </ElCard>
-        <ElCard
-          v-if="
-            currentRelease != undefined &&
-            targetRepos[currentRepo].links.length === 0
-          "
-          class="download-card"
-        >
-          <template #header>
-            <ElTag type="primary" disableTransitions>Branch</ElTag>
-            <a
-              class="download-source"
-              :href="`https://github.com/${targetRepos[currentRepo].repo}/tree/${currentRelease.branch}`"
-              @click.stop
-            >
-              {{ currentRelease.branch }}
-            </a>
-            ：
-            <a
-              :href="`https://github.com/${targetRepos[currentRepo].repo}/commit/${currentRelease.commitSha}`"
-              @click.stop
-            >
-              {{ currentRelease.commitSha.slice(0, 7) }}
-            </a>
-          </template>
-
-          <ElButton
-            type="primary"
-            :href="releasePageUrl(currentRelease.branch)"
-            tag="a"
-            >リリース</ElButton
-          >
-        </ElCard>
       </template>
+      <ElCard v-else-if="currentRelease != undefined" class="download-card">
+        <template #header>
+          <ElTag type="primary" disableTransitions>Branch</ElTag>
+          <a
+            class="download-source"
+            :href="`https://github.com/${targetRepos[currentRepo].repo}/tree/${currentRelease.branch}`"
+            @click.stop
+          >
+            {{ currentRelease.branch }}
+          </a>
+          ：
+          <a
+            :href="`https://github.com/${targetRepos[currentRepo].repo}/commit/${currentRelease.commitSha}`"
+            @click.stop
+          >
+            {{ currentRelease.commitSha.slice(0, 7) }}
+          </a>
+        </template>
+
+        <ElButton
+          type="primary"
+          :href="releasePageUrl(currentRelease.branch)"
+          tag="a"
+          >リリース</ElButton
+        >
+      </ElCard>
     </section>
   </main>
 </template>
@@ -182,12 +176,10 @@ import {
 import { computed, ref, onMounted, watch } from "vue";
 import { TargetRepoKey } from "../scripts/common.ts";
 import { targetRepos } from "../scripts/constants.ts";
-import { useDownloadData } from "./composables/useDownloadData.ts";
-import { useReleaseData } from "./composables/useReleaseData.ts";
+import { usePreviewData } from "./composables/usePreviewData.ts";
 import { useColorScheme } from "./composables/useColorScheme.ts";
 
-const downloads = useDownloadData();
-const releases = useReleaseData();
+const previewData = usePreviewData();
 useColorScheme();
 
 const currentRepo = ref<TargetRepoKey>("editor");
@@ -207,12 +199,13 @@ watch(currentRepo, (newVal) => {
   history.replaceState(null, "", `${location.pathname}?${search.toString()}`);
 });
 
+const currentTargetRepo = computed(() => targetRepos[currentRepo.value]);
 const detailBranch = new URLSearchParams(location.search).get("release");
 const currentRelease = computed(() => {
-  if (releases.value.loading) {
+  if (previewData.value.loading) {
     return undefined;
   }
-  return releases.value.result.find(
+  return previewData.value.releases.find(
     (release) => release.repoKey === currentRepo.value,
   );
 });
@@ -230,7 +223,7 @@ const releasePageUrl = (branch: string) =>
 const joinUrl = (path: string) =>
   `${import.meta.env.BASE_URL}/preview/${path}`.replace(/\/+/g, "/");
 
-const formatFileSize = (size: number): string => {
+const formatFileSize = (size: number) => {
   if (size >= 1_073_741_824) {
     return `${(size / 1_073_741_824).toFixed(1)} GiB`;
   }

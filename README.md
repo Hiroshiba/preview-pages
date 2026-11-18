@@ -88,7 +88,7 @@ sequenceDiagram
 ### 開発版の配布
 
 開発版を配布するリポジトリは、`scripts/constants.ts` の `targetRepos` で `releaseBranch` に配布するブランチを指定します。
-Webプレビューが無いリポジトリは `links` を空にします。
+Webプレビューが無いリポジトリは `links` を省きます。
 
 配布対象のリポジトリは次のようにしてください。
 

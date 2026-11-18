@@ -9,6 +9,7 @@ import {
   destinationDir,
   DownloadResult,
   splitRepoName,
+  UnreachableError,
 } from "./common.ts";
 import {
   PullRequest,
@@ -119,10 +120,14 @@ function createDeployInfoMessage(
   path: string,
   source: { type: "pullRequest"; pullRequest: PullRequest },
 ) {
+  const targetRepo = targetRepos[repoKey];
+  if (!("links" in targetRepo)) {
+    throw new UnreachableError();
+  }
   return [
     ":rocket: プレビュー用ページを作成しました :rocket:",
     "",
-    ...targetRepos[repoKey].links.map(
+    ...targetRepo.links.map(
       ({ path: linkPath, emoji, label }) =>
         `- <a href="${pagesUrl}/preview/${path}/${linkPath}" target="_blank">${emoji} ${label}</a>`,
     ),

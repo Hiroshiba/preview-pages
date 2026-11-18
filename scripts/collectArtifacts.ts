@@ -35,10 +35,10 @@ import {
   Source as ArtifactSource,
 } from "./constants.ts";
 import {
-  createRelease,
+  createReleaseFileName,
+  createReleaseIfNotExists,
+  createReleaseInfoFileName,
   ensureReleaseAsset,
-  getRelease,
-  publishRelease,
   ReleaseSource,
 } from "./release.ts";
 
@@ -73,7 +73,7 @@ async function main() {
   )) {
     rootLogger.info`${repoKey}: ${data.length} successful downloads / ${numTargets} targets`;
   }
-  rootLogger.info`Releases: ${releases.length} published / ${Object.values(targetRepos).filter((repo) => "releaseBranch" in repo).length} targets`;
+  rootLogger.info`Releases: ${releases.length} successful /${Object.values(targetRepos).filter((repo) => "releaseBranch" in repo).length} targets`;
   rootLogger.info`Total: ${totalSuccessfulDownloads} successful downloads / ${totalTargets} targets`;
 }
 
@@ -128,7 +128,7 @@ async function collectArtifacts(
   args: Args,
   repoKey: TargetRepoKey,
 ): Promise<DownloadResult> {
-  if (targetRepos[repoKey].links.length === 0) {
+  if (!("links" in targetRepos[repoKey])) {
     return { repoKey, data: [], numTargets: 0 };
   }
   const { filteredBranches, pullRequests } = await fetchTargets(repoKey);
@@ -534,14 +534,18 @@ async function collectRelease(
   log: Logger,
   source: ReleaseSource,
 ): Promise<ReleaseData> {
-  const existingRelease = await getRelease(source.repoKey, source.runId);
-  if (existingRelease != undefined && !existingRelease.draft) {
-    return toReleaseData(source, existingRelease.assets);
+  const release = await createReleaseIfNotExists();
+  const infoFileName = createReleaseInfoFileName(source);
+  const infoAsset = release.assets.find(
+    (asset) => asset.name === infoFileName && asset.state === "uploaded",
+  );
+  if (infoAsset != undefined) {
+    log.info`Release files already uploaded: ${infoFileName}`;
+    return fetchReleaseData(infoAsset);
   }
 
   const artifacts = await fetchReleaseArtifacts(source.repoKey, source.runId);
-  const release = existingRelease ?? (await createRelease(source));
-  const assets: Asset[] = [];
+  const files: ReleaseData["files"] = [];
   await using tempDir = await fs.mkdtempDisposable(
     path.join(os.tmpdir(), "preview-release-"),
   );
@@ -554,26 +558,32 @@ async function collectRelease(
         return;
       }
       const name = path.posix.basename(entry.path);
-      if (assets.some((asset) => asset.name === name)) {
+      if (files.some((file) => file.name === name)) {
         throw new Error(`Duplicate release file name: ${name}`);
       }
       await pipeline(entry, fsSync.createWriteStream(filePath));
-      assets.push(await ensureReleaseAsset(release, name, filePath));
+      const asset = await ensureReleaseAsset(
+        release,
+        createReleaseFileName(source, name),
+        filePath,
+      );
+      files.push({ name, size: asset.size, url: asset.browser_download_url });
     });
   }
-  await publishRelease(release);
-  return toReleaseData(source, assets);
+  const releaseData: ReleaseData = { ...source, files };
+  await fs.writeFile(filePath, JSON.stringify(releaseData, null, 2));
+  await ensureReleaseAsset(release, infoFileName, filePath);
+  return releaseData;
 }
 
-function toReleaseData(source: ReleaseSource, assets: Asset[]): ReleaseData {
-  return {
-    ...source,
-    files: assets.map((asset) => ({
-      name: asset.name,
-      size: asset.size,
-      url: asset.browser_download_url,
-    })),
-  };
+async function fetchReleaseData(asset: Asset): Promise<ReleaseData> {
+  const response = await fetch(asset.browser_download_url);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download release data: ${response.status} ${response.statusText}`,
+    );
+  }
+  return (await response.json()) as ReleaseData;
 }
 
 async function forEachZipEntry(
