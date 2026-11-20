@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import { Octokit, RequestError } from "octokit";
 import {
   Asset,
-  cacheRepo,
   distributionReleaseName,
+  distributionRepo,
   rootLogger,
   splitRepoName,
 } from "./common.ts";
@@ -17,7 +17,7 @@ const releaseClient = new Octokit({
   auth: process.env.GITHUB_TOKEN,
 });
 
-export function createReleaseFilePrefix(
+export function createReleaseBranchPrefix(
   repoKey: TargetRepoKey,
   branch: string,
 ): string {
@@ -25,7 +25,7 @@ export function createReleaseFilePrefix(
 }
 
 export function createReleaseRunPrefix(source: ReleaseSource): string {
-  return `${createReleaseFilePrefix(source.repoKey, source.branch)}${source.runId}-`;
+  return `${createReleaseBranchPrefix(source.repoKey, source.branch)}${source.runId}-`;
 }
 
 export function createReleaseFileName(
@@ -39,10 +39,10 @@ export function createReleaseInfoFileName(source: ReleaseSource): string {
   return `${createReleaseRunPrefix(source)}v1.json`;
 }
 
-export async function getRelease(): Promise<Release | undefined> {
+export async function getDistributionRelease(): Promise<Release | undefined> {
   try {
     const response = await releaseClient.rest.repos.getReleaseByTag({
-      ...splitRepoName(cacheRepo),
+      ...splitRepoName(distributionRepo),
       tag: distributionReleaseName,
     });
     return response.data;
@@ -54,9 +54,9 @@ export async function getRelease(): Promise<Release | undefined> {
   }
 }
 
-export async function createReleaseIfNotExists(): Promise<Release> {
+export async function createDistributionReleaseIfNotExists(): Promise<Release> {
   log.info`Checking if release ${distributionReleaseName} exists...`;
-  const existingRelease = await getRelease();
+  const existingRelease = await getDistributionRelease();
   if (existingRelease != undefined) {
     log.info`Release ${distributionReleaseName} already exists.`;
     return existingRelease;
@@ -64,7 +64,7 @@ export async function createReleaseIfNotExists(): Promise<Release> {
 
   log.info`Creating release ${distributionReleaseName}...`;
   const response = await releaseClient.rest.repos.createRelease({
-    ...splitRepoName(cacheRepo),
+    ...splitRepoName(distributionRepo),
     tag_name: distributionReleaseName,
     name: "Preview Pages Release",
     body: "preview-pagesの開発版を配布するリリース。手動で編集しないでください。",
@@ -74,7 +74,7 @@ export async function createReleaseIfNotExists(): Promise<Release> {
   return response.data;
 }
 
-export async function ensureReleaseAsset(
+export async function uploadReleaseAsset(
   release: Release,
   name: string,
   filePath: string,
@@ -90,7 +90,7 @@ export async function ensureReleaseAsset(
 
   log.info`Uploading ${name}...`;
   const response = await releaseClient.rest.repos.uploadReleaseAsset({
-    ...splitRepoName(cacheRepo),
+    ...splitRepoName(distributionRepo),
     release_id: release.id,
     name,
     // 指定しないとapplication/jsonとして保存される
@@ -103,7 +103,7 @@ export async function ensureReleaseAsset(
 
 export async function deleteReleaseAsset(asset: Asset): Promise<void> {
   await releaseClient.rest.repos.deleteReleaseAsset({
-    ...splitRepoName(cacheRepo),
+    ...splitRepoName(distributionRepo),
     asset_id: asset.id,
   });
 }

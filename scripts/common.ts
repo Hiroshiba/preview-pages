@@ -44,6 +44,8 @@ export const pagesUrl = "https://voicevox.github.io/preview-pages";
 export const cacheRepo = "voicevox/preview-pages";
 // キャッシュのリリース名
 export const cacheReleaseName = "preview-pages-cache";
+// 配布ファイルを保存するリポジトリ
+export const distributionRepo = "voicevox/preview-pages";
 // 配布ファイルのリリース名
 export const distributionReleaseName = "preview-pages-release";
 
