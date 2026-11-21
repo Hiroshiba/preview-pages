@@ -121,7 +121,7 @@ function createDeployInfoMessage(
   source: { type: "pullRequest"; pullRequest: PullRequest },
 ) {
   const targetRepo = targetRepos[repoKey];
-  if (!("links" in targetRepo)) {
+  if (targetRepo.links == undefined) {
     throw new UnreachableError();
   }
   return [

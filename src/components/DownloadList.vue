@@ -23,7 +23,7 @@
     <template v-if="previewData.loading">
       <ElLoading />
     </template>
-    <template v-else-if="'links' in currentTargetRepo">
+    <template v-else-if="currentTargetRepo.links != undefined">
       <ElCard
         v-for="download in previewData.downloads[currentRepo].data"
         :key="download.pathFragment"

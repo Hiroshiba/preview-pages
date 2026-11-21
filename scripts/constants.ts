@@ -23,7 +23,20 @@ export type DownloadData = {
   cached: boolean;
 };
 
-export const targetRepos = {
+type TargetRepo = {
+  repo: string;
+  label: string;
+
+  links?: {
+    path: string;
+    buttonType: "success" | "danger";
+    emoji: string;
+    label: string;
+  }[];
+  releaseBranch?: string;
+};
+
+const targetRepoDefinitions = {
   editor: {
     repo: "VOICEVOX/voicevox",
     label: "エディタ",
@@ -71,23 +84,12 @@ export const targetRepos = {
     label: "エンジン",
     releaseBranch: "master",
   },
-} as const satisfies Record<
-  string,
-  {
-    repo: string;
-    label: string;
+} as const satisfies Record<string, TargetRepo>;
 
-    links?: {
-      path: string;
-      buttonType: "success" | "danger";
-      emoji: string;
-      label: string;
-    }[];
-    releaseBranch?: string;
-  }
->;
+export type TargetRepoKey = keyof typeof targetRepoDefinitions;
 
-export type TargetRepoKey = keyof typeof targetRepos;
+export const targetRepos: Record<TargetRepoKey, TargetRepo> =
+  targetRepoDefinitions;
 
 export type DownloadResult = {
   repoKey: TargetRepoKey;

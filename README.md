@@ -28,7 +28,8 @@ pnpm run dev
 3. 以下のコマンドを実行します：
 
 ```
-pnpm run run:collect-artifacts --fetchUrlOnly
+pnpm run run:collect-artifacts
+pnpm run run:download-release-assets
 ```
 
 ### 書き込み系の動作を含めて動かす場合
@@ -48,11 +49,12 @@ pnpm run run:collect-artifacts --fetchUrlOnly
 
 2. 作成したGitHub Appsの`Private key`を取得し、`private-key.pem`として保存します。
 3. `.env.example` をコピーして `.env` を作成します。内容はコメントを参照してください。
-4. `GITHUB_TOKEN` にpreview-pagesのContents: Read and write権限を持つPersonal Access Tokenを設定します。
+4. `run:upload-release-assets` はpreview-pagesのReleaseへ書き込むため、`GITHUB_TOKEN` にpreview-pagesのContents: Read and write権限を持つPersonal Access Tokenを設定します。
 5. 以下のコマンドを実行します：
 
 ```
 pnpm run run:collect-artifacts
+pnpm run run:upload-release-assets
 pnpm run run:update-comments
 ```
 

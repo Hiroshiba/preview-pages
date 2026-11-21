@@ -1,13 +1,10 @@
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { Semaphore } from "@core/asyncutil";
 import { Logger } from "@logtape/logtape";
-import { Endpoints } from "@octokit/types";
 import { RequestError } from "octokit";
 import unzip from "unzip-stream";
 import {
@@ -22,40 +19,34 @@ import {
   getCachedArtifact,
   splitRepoName,
   isTargetBranch,
-  Asset,
 } from "./common.ts";
 import {
   DownloadData,
   targetRepos,
   DownloadResult,
   TargetRepoKey,
-  ReleaseData,
   Branch,
   PullRequest,
   Source as ArtifactSource,
 } from "./constants.ts";
 import {
-  createDistributionReleaseIfNotExists,
-  createReleaseFileName,
-  createReleaseInfoFileName,
-  ReleaseSource,
-  uploadReleaseAsset,
-} from "./release.ts";
+  fetchArtifactBody,
+  fetchArtifactDownloadUrl,
+  ReleaseArtifact,
+} from "./artifact.ts";
+import { ReleaseSelection, ReleaseSource } from "./release.ts";
 
 type Args = {
   fetchUrlOnly: boolean;
 };
 
-type WorkflowArtifact =
-  Endpoints["GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"]["response"]["data"]["artifacts"][number];
-
 async function main() {
   const args = processArgs();
   const { totalSuccessfulDownloads, successfulDownloads, totalTargets } =
     await collectAllArtifacts(args);
-  const releases = await collectAllReleases(args);
+  const releaseSelections = await selectAllReleases(args);
 
-  if (totalSuccessfulDownloads + releases.length === 0) {
+  if (totalSuccessfulDownloads + releaseSelections.length === 0) {
     rootLogger.error("No artifacts were collected.");
     process.exit(1);
   }
@@ -64,8 +55,8 @@ async function main() {
     JSON.stringify(successfulDownloads, null, 2),
   );
   await fs.writeFile(
-    `${destinationDir}/releases.json`,
-    JSON.stringify(releases, null, 2),
+    `${cacheDownloadDir}/releaseSelections.json`,
+    JSON.stringify(releaseSelections, null, 2),
   );
   rootLogger.info`Done:`;
   for (const { repoKey, data, numTargets } of Object.values(
@@ -73,7 +64,7 @@ async function main() {
   )) {
     rootLogger.info`${repoKey}: ${data.length} successful downloads / ${numTargets} targets`;
   }
-  rootLogger.info`Releases: ${releases.length} successful / ${Object.values(targetRepos).filter((repo) => "releaseBranch" in repo).length} targets`;
+  rootLogger.info`Releases: ${releaseSelections.length} selected / ${Object.values(targetRepos).filter((repo) => repo.releaseBranch != undefined).length} targets`;
   rootLogger.info`Total: ${totalSuccessfulDownloads} successful downloads / ${totalTargets} targets`;
 }
 
@@ -128,7 +119,7 @@ async function collectArtifacts(
   args: Args,
   repoKey: TargetRepoKey,
 ): Promise<DownloadResult> {
-  if (!("links" in targetRepos[repoKey])) {
+  if (targetRepos[repoKey].links == undefined) {
     return { repoKey, data: [], numTargets: 0 };
   }
   const { filteredBranches, pullRequests } = await fetchTargets(repoKey);
@@ -466,57 +457,46 @@ async function fetchWebArtifactUrl(
   return innerDownloadUrl;
 }
 
-async function fetchArtifactBody(url: string): Promise<Readable> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to download artifact: ${response.status} ${response.statusText}`,
-    );
-  }
-  if (!response.body) {
-    throw new Error("Response body is empty");
-  }
-  return Readable.fromWeb(response.body);
-}
-
-async function collectAllReleases(args: Args): Promise<ReleaseData[]> {
-  const releases: ReleaseData[] = [];
+async function selectAllReleases(args: Args): Promise<ReleaseSelection[]> {
+  const releaseSelections: ReleaseSelection[] = [];
   for (const [rawRepoKey, repo] of Object.entries(targetRepos)) {
-    if (!("releaseBranch" in repo)) {
+    if (repo.releaseBranch == undefined) {
       continue;
     }
     const repoKey = rawRepoKey as TargetRepoKey;
-    rootLogger.info`Collecting releases for ${repo.repo}...`;
-    const release = await collectRelease(args, repoKey, repo.releaseBranch);
-    if (release != undefined) {
-      releases.push(release);
+    rootLogger.info`Selecting releases for ${repo.repo}...`;
+    const releaseSelection = await selectRelease(
+      args,
+      repoKey,
+      repo.releaseBranch,
+    );
+    if (releaseSelection != undefined) {
+      releaseSelections.push(releaseSelection);
     }
   }
-  return releases;
+  return releaseSelections;
 }
 
-async function collectRelease(
+async function selectRelease(
   args: Args,
   repoKey: TargetRepoKey,
   branchName: string,
-): Promise<ReleaseData | undefined> {
+): Promise<ReleaseSelection | undefined> {
   const log = rootLogger.getChild(repoKey).getChild(`Branch ${branchName}`);
 
   try {
     const source = await fetchReleaseSource(log, repoKey, branchName);
+    const artifacts = await fetchReleaseArtifacts(repoKey, source.runId);
 
     if (args.fetchUrlOnly) {
-      const artifacts = await fetchReleaseArtifacts(repoKey, source.runId);
       for (const artifact of artifacts) {
         const url = await fetchArtifactDownloadUrl(log, repoKey, artifact);
         log.info`Download skipped: ${url}`;
       }
-      return undefined;
     }
 
-    const release = await uploadRelease(log, source);
     log.info("Done.");
-    return release;
+    return { source, artifacts };
   } catch (e) {
     log.error`Failed to process: ${e}`;
   }
@@ -535,114 +515,17 @@ async function fetchReleaseSource(
   return { repoKey, branch: branch.name, commitSha: branch.commit.sha, runId };
 }
 
-async function uploadRelease(
-  log: Logger,
-  source: ReleaseSource,
-): Promise<ReleaseData> {
-  const distributionRelease = await createDistributionReleaseIfNotExists();
-  const infoFileName = createReleaseInfoFileName(source);
-  const infoAsset = distributionRelease.assets.find(
-    (asset) => asset.name === infoFileName && asset.state === "uploaded",
-  );
-  if (infoAsset != undefined) {
-    log.info`Release files already uploaded: ${infoFileName}`;
-    return fetchReleaseData(infoAsset);
-  }
-
-  const artifacts = await fetchReleaseArtifacts(source.repoKey, source.runId);
-  const files: ReleaseData["files"] = [];
-  await using tempDir = await fs.mkdtempDisposable(
-    path.join(os.tmpdir(), "preview-release-"),
-  );
-  const assetPath = path.join(tempDir.path, "asset");
-  for (const artifact of artifacts) {
-    const url = await fetchArtifactDownloadUrl(log, source.repoKey, artifact);
-    await forEachZipEntry(await fetchArtifactBody(url), async (entry) => {
-      if (entry.type === "Directory") {
-        entry.autodrain();
-        return;
-      }
-      const name = path.posix.basename(entry.path);
-      if (files.some((file) => file.name === name)) {
-        throw new Error(`Duplicate release file name: ${name}`);
-      }
-      await pipeline(entry, fsSync.createWriteStream(assetPath));
-      const asset = await uploadReleaseAsset(
-        distributionRelease,
-        createReleaseFileName(source, name),
-        assetPath,
-      );
-      files.push({ name, size: asset.size, url: asset.browser_download_url });
-    });
-  }
-  const releaseData: ReleaseData = { ...source, files };
-  await fs.writeFile(assetPath, JSON.stringify(releaseData, null, 2));
-  await uploadReleaseAsset(distributionRelease, infoFileName, assetPath);
-  return releaseData;
-}
-
-async function fetchReleaseData(asset: Asset): Promise<ReleaseData> {
-  const response = await fetch(asset.browser_download_url);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to download release data: ${response.status} ${response.statusText}`,
-    );
-  }
-  return (await response.json()) as ReleaseData;
-}
-
-async function forEachZipEntry(
-  zip: Readable,
-  processEntry: (entry: unzip.Entry) => Promise<void>,
-): Promise<void> {
-  await pipeline(
-    zip,
-    unzip.Parse(),
-    new Writable({
-      objectMode: true,
-      write(entry: unzip.Entry, _encoding, callback) {
-        void processEntry(entry).then(() => callback(), callback);
-      },
-    }),
-  );
-}
-
 async function fetchReleaseArtifacts(
   repoKey: TargetRepoKey,
   runId: number,
-): Promise<WorkflowArtifact[]> {
+): Promise<ReleaseArtifact[]> {
   const artifacts = await octokit.paginate(
     "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
     { ...splitRepoName(repoKey), run_id: runId, per_page: 100 },
   );
-  const releaseArtifacts = artifacts.filter((artifact) =>
-    artifact.name.startsWith(releaseArtifactPrefix),
-  );
-  if (releaseArtifacts.length === 0) {
-    throw new Error(`No release artifacts found in run ${runId}`);
-  }
-  return releaseArtifacts;
-}
-
-async function fetchArtifactDownloadUrl(
-  log: Logger,
-  repoKey: TargetRepoKey,
-  artifact: WorkflowArtifact,
-): Promise<string> {
-  log.info`Fetching artifact URL: ${artifact.name}`;
-  const response = await octokit.request(
-    "GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}/{archive_format}",
-    {
-      ...splitRepoName(repoKey),
-      artifact_id: artifact.id,
-      archive_format: "zip",
-      request: { redirect: "manual" },
-    },
-  );
-  if (response.headers.location == undefined) {
-    throw new Error(`Artifact "${artifact.name}" does not have a download URL`);
-  }
-  return response.headers.location;
+  return artifacts
+    .filter((artifact) => artifact.name.startsWith(releaseArtifactPrefix))
+    .map(({ id, name }) => ({ id, name }));
 }
 
 await main();
