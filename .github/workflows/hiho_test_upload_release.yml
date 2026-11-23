@@ -1,0 +1,58 @@
+name: Test upload-release
+
+on:
+  push:
+    branches:
+      - hiho-upload-release-test
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2022
+          - macos-15-intel
+          - macos-15
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Create test files
+        shell: bash
+        run: |
+          mkdir -p hiho_dist/sub
+          gen() {
+            node -e 'const fs=require("fs");const n=Number(process.argv[2]);const b=Buffer.alloc(n);for(let i=0;i<n;i++)b[i]=(i*31+7)&255;fs.writeFileSync(process.argv[1],b)' "$1" "$2"
+          }
+          gen "hiho_dist/${{ matrix.os }}-a.txt" 2
+          gen "hiho_dist/${{ matrix.os }}-b.7z.001" 1048576
+          gen "hiho_dist/sub/${{ matrix.os }}-c.bin" 67108864
+          ls -lR hiho_dist
+
+      - name: Upload two files in one call
+        uses: Hiroshiba/preview-pages/upload-release@hiho-upload-release-test
+        with:
+          path: |
+            hiho_dist/${{ matrix.os }}-a.txt
+            hiho_dist/${{ matrix.os }}-b.7z.001
+
+      - name: Upload one file in another call
+        uses: Hiroshiba/preview-pages/upload-release@hiho-upload-release-test
+        with:
+          path: hiho_dist/sub/*.bin
+
+      - name: Upload no files
+        id: upload_no_files
+        continue-on-error: true
+        uses: Hiroshiba/preview-pages/upload-release@hiho-upload-release-test
+        with:
+          path: hiho_dist/nothing-*
+
+      - name: Check that uploading no files failed
+        if: steps.upload_no_files.outcome != 'failure'
+        shell: bash
+        run: exit 1
