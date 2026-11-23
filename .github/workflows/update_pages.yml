@@ -43,9 +43,9 @@ jobs:
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
 
-      - name: Upload Release Assets
+      - name: Upload Releases
         run: |
-          pnpm run run:upload-release-assets
+          pnpm run run:upload-releases
         env:
           APP_ID: ${{ secrets.APP_ID }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
@@ -81,11 +81,5 @@ jobs:
       - name: Upload Caches
         run: |
           pnpm run run:upload-caches
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cleanup Releases
-        run: |
-          pnpm run run:cleanup-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

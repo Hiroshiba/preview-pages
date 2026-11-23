@@ -7,11 +7,11 @@ import {
   pagesUrl,
   rootLogger,
   destinationDir,
-  DownloadResult,
   splitRepoName,
   UnreachableError,
 } from "./common.ts";
 import {
+  PreviewData,
   PullRequest,
   Source,
   TargetRepoKey,
@@ -19,9 +19,9 @@ import {
 } from "./constants.ts";
 
 async function main() {
-  const downloadResults = JSON.parse(
-    await fs.readFile(`${destinationDir}/downloads.json`, "utf-8"),
-  ) as Record<TargetRepoKey, DownloadResult>;
+  const { downloads: downloadResults } = JSON.parse(
+    await fs.readFile(`${destinationDir}/previews.json`, "utf-8"),
+  ) as PreviewData;
 
   let allPullRequests = 0;
   let newComments = 0;
@@ -121,7 +121,7 @@ function createDeployInfoMessage(
   source: { type: "pullRequest"; pullRequest: PullRequest },
 ) {
   const targetRepo = targetRepos[repoKey];
-  if (targetRepo.links == undefined) {
+  if (!("links" in targetRepo)) {
     throw new UnreachableError();
   }
   return [

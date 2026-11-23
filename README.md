@@ -1,6 +1,6 @@
 # VOICEVOX Preview Pages
 
-VOICEVOXのWebプレビューと開発版リリース一覧を提供するリポジトリです。  
+[voicevox/voicevox](https://github.com/voicevox/voicevox) のプレビューページを提供するためのリポジトリです。  
 対象ブランチ：
 
 - `main`
@@ -16,8 +16,7 @@ VOICEVOXのWebプレビューと開発版リリース一覧を提供するリポ
 
 ```
 pnpm i
-curl https://voicevox.github.io/preview-pages/preview/downloads.json -o ./public/preview/downloads.json
-curl https://voicevox.github.io/preview-pages/preview/releases.json -o ./public/preview/releases.json
+curl https://voicevox.github.io/preview-pages/preview/previews.json -o ./public/preview/previews.json
 pnpm run dev
 ```
 
@@ -29,7 +28,6 @@ pnpm run dev
 
 ```
 pnpm run run:collect-artifacts
-pnpm run run:download-release-assets
 ```
 
 ### 書き込み系の動作を含めて動かす場合
@@ -49,12 +47,10 @@ pnpm run run:download-release-assets
 
 2. 作成したGitHub Appsの`Private key`を取得し、`private-key.pem`として保存します。
 3. `.env.example` をコピーして `.env` を作成します。内容はコメントを参照してください。
-4. `run:upload-release-assets` はpreview-pagesのReleaseへ書き込むため、`GITHUB_TOKEN` にpreview-pagesのContents: Read and write権限を持つPersonal Access Tokenを設定します。
-5. 以下のコマンドを実行します：
+4. 以下のコマンドを実行します：
 
 ```
 pnpm run run:collect-artifacts
-pnpm run run:upload-release-assets
 pnpm run run:update-comments
 ```
 
@@ -87,21 +83,35 @@ sequenceDiagram
     deactivate preview_pages
 ```
 
-### 開発版の配布
+配布ファイルは、Artifactから`preview-pages-release`というReleaseにコピーして配布します。
 
-開発版を配布するリポジトリは、`scripts/constants.ts` の `targetRepos` で `releaseBranch` に配布するブランチを指定します。
-Webプレビューが無いリポジトリは `links` を省きます。
+```mermaid
+sequenceDiagram
+    participant product as 配布するリポジトリ
+    participant preview_pages as voicevox/preview_pages
+    participant release as preview-pages-releaseのRelease
 
-配布対象のリポジトリは次のようにしてください。
+    note over product: ビルドを開始する
+    activate product
 
-- 配布ファイルを、名前が `preview-pages-release-` で始まるArtifactとしてuploadします。
-  - Artifact内の階層は無視し、ファイル名だけで保存します。同じrunの全Artifactでファイル名が重複しないようにしてください。
-- すべてのuploadが終わってから `build_preview_pages` checkを成功させます。
-- その成功に依存するjobから `update_pages.yml` を起動します。
+    product->>+preview_pages: update_pages.ymlを発火させる
+
+    loop
+        preview_pages->>product: build_preview_releaseの終了を問い合わせる
+    end
+
+    note over product: 各ビルドJobが配布ファイルをArtifactとしてアップロードし、<br>build_preview_releaseが完了する
+    deactivate product
+    preview_pages->>product: Collect Artifacts：Artifactの一覧からpreviews.jsonを作る
+    preview_pages->>release: Upload Releases：Artifactをコピーする
+
+    note over preview_pages: Pagesにデプロイする
+    deactivate preview_pages
+```
 
 ## リポジトリの追加
 
-1. `scripts/constants.ts` を編集します。
+1. `scripts/constants.ts` を編集します。Webプレビューがあるリポジトリには`links`を、配布するリポジトリには`release: true`を書きます。
 
 設定例：
 
@@ -118,9 +128,14 @@ Webプレビューが無いリポジトリは `links` を省きます。
       },
     ],
   },
+  engine: {
+    repo: "VOICEVOX/voicevox_engine",
+    label: "エンジン",
+    release: true,
+  },
 ```
 
-2. 追加するリポジトリに以下の2つのWorkflowを追加します。
+2. 追加するリポジトリに以下の2つのWorkflowを追加します。`build_preview_pages.yml`はWebプレビューがあるリポジトリにだけ追加します。
 
 <details>
 <summary>DANGEROUS_trigger_preview_pages.yml</summary>
@@ -196,6 +211,39 @@ jobs:
           name: preview-pages
           # pathも適宜変更すること。
           path: "./dist"
+```
+
+</details>
+
+3. 配布するリポジトリでは、配布ファイルを作る各ビルドJobで`upload-release`を使い、全ビルドJobを待つ`build_preview_release` Jobを追加します。
+
+<details>
+<summary>配布ファイルをビルドするWorkflow</summary>
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # ... ビルド ...
+
+      - name: Upload release files
+        uses: VOICEVOX/preview-pages/upload-release@main
+        with:
+          # pathは適宜変更すること。
+          path: |
+            ./dist/*.7z.*
+            ./dist/*.vvpp
+
+  # このJobの名前を変更したときは、voicevox/preview-pages側のscripts/common.tsも変更すること。
+  build_preview_release:
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Complete
+        run: |
+          echo "All release files are uploaded."
 ```
 
 </details>

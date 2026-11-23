@@ -35,3 +35,9 @@ jobs:
           pnpm run run:cleanup-caches
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup Releases
+        run: |
+          pnpm run run:cleanup-releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

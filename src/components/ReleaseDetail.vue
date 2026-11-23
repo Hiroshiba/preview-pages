@@ -1,43 +1,25 @@
 <template>
   <div class="release-detail">
     <nav class="release-nav">
-      <a :href="repoPageUrl()">{{ targetRepos[repoKey].label }}の一覧</a>
-      ／ {{ branch }}のリリース
+      <a :href="listUrl">{{ targetRepos[repoKey].label }}の一覧</a>
+      ／ リリース
     </nav>
-    <h2 class="release-title">
-      {{ targetRepos[repoKey].label }}の開発版リリース
-    </h2>
+    <h2 class="release-title">{{ targetRepos[repoKey].label }}のリリース</h2>
     <a :href="`https://github.com/${targetRepos[repoKey].repo}`">
       {{ targetRepos[repoKey].repo }}
     </a>
-    <template v-if="releaseState.type === 'loading'">
-      <ElLoading />
-    </template>
-    <p v-else-if="releaseState.type === 'notFound'">
-      リリースが見つかりませんでした。
-    </p>
+    <ElLoading v-if="previewData.loading" />
+    <p v-else-if="release == undefined">リリースが見つかりませんでした。</p>
     <template v-else>
       <div class="release-source">
-        <ElTag type="primary" disableTransitions>Branch</ElTag>
-        <a
-          :href="`https://github.com/${targetRepos[repoKey].repo}/tree/${releaseState.release.branch}`"
-        >
-          {{ releaseState.release.branch }}
-        </a>
-        <span>コミット</span>
-        <a
-          :href="`https://github.com/${targetRepos[repoKey].repo}/commit/${releaseState.release.commitSha}`"
-        >
-          {{ releaseState.release.commitSha.slice(0, 7) }}
-        </a>
+        <SourceLabel
+          :source="release.source"
+          :repo="targetRepos[repoKey].repo"
+        />
       </div>
       <h3>配布ファイル</h3>
       <ul class="release-files">
-        <li
-          v-for="file in releaseState.release.files"
-          :key="file.name"
-          class="release-file"
-        >
+        <li v-for="file in release.files" :key="file.name" class="release-file">
           <a :href="file.url">{{ file.name }}</a>
           <span>{{ formatFileSize(file.size) }}</span>
         </li>
@@ -47,51 +29,45 @@
 </template>
 
 <script setup lang="ts">
-import { ElLoading, ElTag } from "element-plus";
+import { ElLoading } from "element-plus";
 import { computed } from "vue";
 import { TargetRepoKey } from "../../scripts/common.ts";
-import { ReleaseData, targetRepos } from "../../scripts/constants.ts";
+import { createSourceKey, targetRepos } from "../../scripts/constants.ts";
 import { usePreviewData } from "../composables/usePreviewData.ts";
+import SourceLabel from "./SourceLabel.vue";
 
 const props = defineProps<{
   repoKey: TargetRepoKey;
-  branch: string;
+  sourceKey: string;
 }>();
 const previewData = usePreviewData();
 
-const releaseState = computed<
-  | { type: "loading" }
-  | { type: "notFound" }
-  | { type: "found"; release: ReleaseData }
->(() => {
+const release = computed(() => {
   if (previewData.value.loading) {
-    return { type: "loading" };
+    return undefined;
   }
-  const release = previewData.value.releases.find(
-    (release) =>
-      release.repoKey === props.repoKey && release.branch === props.branch,
+  return previewData.value.result.releases[props.repoKey]?.data.find(
+    (data) => createSourceKey(data.source) === props.sourceKey,
   );
-  if (release == undefined) {
-    return { type: "notFound" };
-  }
-  return { type: "found", release };
 });
 
-const repoPageUrl = () =>
-  `${location.pathname}?${new URLSearchParams({ repo: props.repoKey }).toString()}`;
-
-const formatFileSize = (size: number) => {
-  if (size >= 1_073_741_824) {
-    return `${(size / 1_073_741_824).toFixed(1)} GiB`;
+function formatFileSize(size: number): string {
+  if (size >= 1024 ** 3) {
+    return `${(size / 1024 ** 3).toFixed(1)} GiB`;
   }
-  if (size >= 1_048_576) {
-    return `${(size / 1_048_576).toFixed(1)} MiB`;
+  if (size >= 1024 ** 2) {
+    return `${(size / 1024 ** 2).toFixed(1)} MiB`;
   }
-  if (size >= 1_024) {
-    return `${(size / 1_024).toFixed(1)} KiB`;
+  if (size >= 1024) {
+    return `${(size / 1024).toFixed(1)} KiB`;
   }
   return `${size} B`;
-};
+}
+
+const listUrl = computed(
+  () =>
+    `${location.pathname}?${new URLSearchParams({ repo: props.repoKey }).toString()}`,
+);
 </script>
 
 <style scoped lang="scss">

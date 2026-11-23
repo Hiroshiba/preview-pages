@@ -1,0 +1,9 @@
+{
+  "name": "upload-release",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.4.1",
+  "dependencies": {
+    "@actions/artifact": "6.3.1"
+  }
+}

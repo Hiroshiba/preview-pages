@@ -22,21 +22,20 @@ export type DownloadData = {
   runId: number;
   cached: boolean;
 };
-
-type TargetRepo = {
-  repo: string;
-  label: string;
-
-  links?: {
-    path: string;
-    buttonType: "success" | "danger";
-    emoji: string;
-    label: string;
-  }[];
-  releaseBranch?: string;
+export type ReleaseFile = {
+  name: string;
+  size: number;
+  artifactId: number;
+  url: string;
+};
+export type ReleaseData = {
+  source: Source;
+  runId: number;
+  cached: boolean;
+  files: ReleaseFile[];
 };
 
-const targetRepoDefinitions = {
+export const targetRepos = {
   editor: {
     repo: "VOICEVOX/voicevox",
     label: "エディタ",
@@ -82,14 +81,25 @@ const targetRepoDefinitions = {
   engine: {
     repo: "VOICEVOX/voicevox_engine",
     label: "エンジン",
-    releaseBranch: "master",
+    release: true,
   },
-} as const satisfies Record<string, TargetRepo>;
+} as const satisfies Record<
+  string,
+  {
+    repo: string;
+    label: string;
 
-export type TargetRepoKey = keyof typeof targetRepoDefinitions;
+    links?: {
+      path: string;
+      buttonType: "success" | "danger";
+      emoji: string;
+      label: string;
+    }[];
+    release?: true;
+  }
+>;
 
-export const targetRepos: Record<TargetRepoKey, TargetRepo> =
-  targetRepoDefinitions;
+export type TargetRepoKey = keyof typeof targetRepos;
 
 export type DownloadResult = {
   repoKey: TargetRepoKey;
@@ -97,10 +107,30 @@ export type DownloadResult = {
   numTargets: number;
 };
 
-export type ReleaseData = {
+export type ReleaseResult = {
   repoKey: TargetRepoKey;
-  branch: string;
-  commitSha: string;
-  runId: number;
-  files: { name: string; size: number; url: string }[];
+  data: ReleaseData[];
+  numTargets: number;
 };
+
+export type PreviewData = {
+  downloads: Partial<Record<TargetRepoKey, DownloadResult>>;
+  releases: Partial<Record<TargetRepoKey, ReleaseResult>>;
+};
+
+export class ExhaustiveError extends Error {
+  constructor(value: never) {
+    super(`Not exhaustive. value: ${String(value)}`);
+  }
+}
+
+export function createSourceKey(source: Source): string {
+  switch (source.type) {
+    case "pullRequest":
+      return `pr-${source.pullRequest.number}`;
+    case "branch":
+      return `branch-${source.branch.name}`;
+    default:
+      throw new ExhaustiveError(source);
+  }
+}

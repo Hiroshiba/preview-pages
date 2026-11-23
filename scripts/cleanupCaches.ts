@@ -1,3 +1,5 @@
+// TODO: cleanupReleases.tsとほぼ同じ処理なので、共通化する。
+
 import { RequestError } from "octokit";
 import {
   cacheReleaseName,

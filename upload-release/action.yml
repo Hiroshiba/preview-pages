@@ -1,0 +1,33 @@
+name: "Upload release files"
+description: "配布ファイルを1つずつzipにせず、preview-pages用のArtifactとしてアップロードする。"
+inputs:
+  path:
+    description: "アップロードするファイルのパスかglob。複数行で複数指定できる。"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Install pnpm
+      uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+      with:
+        version: 10.4.1
+
+    - name: Install Dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: pnpm install
+
+    - name: Upload release files
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        UPLOAD_PATH: ${{ inputs.path }}
+      with:
+        script: |
+          const path = require("path");
+          const { pathToFileURL } = require("url");
+
+          const { default: uploadReleaseFiles } = await import(
+            pathToFileURL(path.join(process.env.ACTION_PATH, "upload.js")).href
+          );
+          await uploadReleaseFiles({ core, glob, uploadPath: process.env.UPLOAD_PATH });

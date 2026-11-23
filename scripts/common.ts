@@ -5,13 +5,12 @@ import { App, Octokit, RequestError } from "octokit";
 import { paginateRest } from "@octokit/plugin-paginate-rest";
 import { throttling } from "@octokit/plugin-throttling";
 import { Endpoints, OctokitResponse } from "@octokit/types";
-import { targetRepos, DownloadData, Source } from "./constants.ts";
-
-export type DownloadResult = {
-  repoKey: TargetRepoKey;
-  data: DownloadData[];
-  numTargets: number;
-};
+import {
+  targetRepos,
+  ReleaseData,
+  Source,
+  createSourceKey,
+} from "./constants.ts";
 
 config({
   path: `${import.meta.dirname}/../.env`,
@@ -33,8 +32,10 @@ export const cacheDownloadDir = `${import.meta.dirname}/cached`;
 export const destinationDir = `${import.meta.dirname}/../public/preview`;
 // ビルドチェックのJobの名前
 export const pagesBuildCheckName = "build_preview_pages";
-// Webプレビューのアーティファクトの名前
-export const webArtifactName = "preview-pages";
+// 配布ファイルのビルドチェックのJobの名前
+export const releaseBuildCheckName = "build_preview_release";
+// ダウンロードするアーティファクトの名前
+export const artifactName = "preview-pages";
 // 配布ファイルのアーティファクトの名前の接頭辞
 export const releaseArtifactPrefix = "preview-pages-release-";
 // PagesのURL
@@ -44,8 +45,8 @@ export const pagesUrl = "https://voicevox.github.io/preview-pages";
 export const cacheRepo = "voicevox/preview-pages";
 // キャッシュのリリース名
 export const cacheReleaseName = "preview-pages-cache";
-// 配布ファイルを保存するリポジトリ
-export const distributionRepo = "voicevox/preview-pages";
+// 配布ファイルを保存するリポジトリ。アセットのURLを組み立てるため、GitHub上の大文字小文字に揃える
+export const distributionRepo = "VOICEVOX/preview-pages";
 // 配布ファイルのリリース名
 export const distributionReleaseName = "preview-pages-release";
 
@@ -77,7 +78,7 @@ await logtape.configure({
 
 export const rootLogger = logtape.getLogger("app");
 
-const getEnv = (name: string) => {
+export const getEnv = (name: string) => {
   const value = process.env[name];
   if (!value) {
     throw new Error(`Missing required env var: ${name}`);
@@ -133,23 +134,6 @@ export const getAppInfo = () => {
   return appInfo;
 };
 
-export class ExhaustiveError extends Error {
-  constructor(value: never) {
-    super(`Not exhaustive. value: ${String(value)}`);
-  }
-}
-
-export function createSourceKey(source: Source): string {
-  switch (source.type) {
-    case "pullRequest":
-      return `pr-${source.pullRequest.number}`;
-    case "branch":
-      return `branch-${source.branch.name}`;
-    default:
-      throw new ExhaustiveError(source);
-  }
-}
-
 export function createCacheFileName(
   repoKey: TargetRepoKey,
   source: Source,
@@ -158,7 +142,24 @@ export function createCacheFileName(
   return `${repoKey}-${createSourceKey(source)}-${runId}-v1.zip`;
 }
 
-export type Asset =
+export function createReleaseInfoFileName(
+  repoKey: TargetRepoKey,
+  source: Source,
+  runId: number,
+): string {
+  return `${repoKey}-${createSourceKey(source)}-${runId}.json`;
+}
+
+export function createReleaseAssetName(
+  repoKey: TargetRepoKey,
+  source: Source,
+  runId: number,
+  fileName: string,
+): string {
+  return `${repoKey}-${createSourceKey(source)}-${runId}--${fileName}`;
+}
+
+type Asset =
   Endpoints["GET /repos/{owner}/{repo}/releases/assets/{asset_id}"]["response"]["data"];
 
 /* リポジトリをOctokitのパラメーターに渡せる形で分解する。 */
@@ -221,6 +222,54 @@ export async function getCachedArtifact(
   }
 
   return null;
+}
+
+let distributionAssets: Asset[] | undefined = undefined;
+
+const releaseLogger = rootLogger.getChild("release");
+
+async function getDistributionAssets(): Promise<Asset[]> {
+  if (distributionAssets == undefined) {
+    try {
+      const { data } = await octokit.rest.repos.getReleaseByTag({
+        ...splitRepoName(distributionRepo),
+        tag: distributionReleaseName,
+      });
+      distributionAssets = data.assets;
+    } catch (error) {
+      if (error instanceof RequestError && error.status === 404) {
+        releaseLogger.info`Release ${distributionReleaseName} not found in ${distributionRepo}.`;
+        distributionAssets = [];
+        return distributionAssets;
+      }
+      throw error;
+    }
+  }
+  return distributionAssets;
+}
+
+export async function getCachedRelease(
+  repoKey: TargetRepoKey,
+  source: Source,
+  runId: number,
+): Promise<ReleaseData | undefined> {
+  const assets = await getDistributionAssets();
+  const releaseInfoFileName = createReleaseInfoFileName(repoKey, source, runId);
+
+  for (const asset of assets) {
+    if (asset.name === releaseInfoFileName) {
+      releaseLogger.info`Found cached release for ${releaseInfoFileName}`;
+      const response = await fetch(asset.browser_download_url);
+      if (!response.ok) {
+        throw new Error(
+          `Failed to download release info: ${response.status} ${response.statusText}`,
+        );
+      }
+      return (await response.json()) as ReleaseData;
+    }
+  }
+
+  return undefined;
 }
 
 export function isTargetBranch(branchName: string): boolean {

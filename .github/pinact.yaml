@@ -5,6 +5,7 @@ files:
   - pattern: ".github/workflows/*.yml"
   - pattern: ".github/actions/*/action.yml"
   - pattern: "base/action.yml"
+  - pattern: "upload-release/action.yml"
 
 ignore_actions:
   - name: voicevox/merge-gatekeeper
